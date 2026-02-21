@@ -2,11 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { HttpService } from '@nestjs/axios';
 import { InjectRepository } from '@nestjs/typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Repository } from 'typeorm';
 import { lastValueFrom } from 'rxjs';
 import { InstagramPost } from './entities/instagram-post.entity';
-import { TelegramService } from '../telegram/telegram.service';
 import { WebhookEventDto } from './dto/webhook-event.dto';
+import { MediaReceivedEvent } from './events/media-received.event';
 
 interface InstagramMedia {
   id: string;
@@ -26,7 +27,7 @@ export class InstagramService {
   constructor(
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
-    private readonly telegramService: TelegramService,
+    private readonly eventEmitter: EventEmitter2,
     @InjectRepository(InstagramPost)
     private readonly postRepository: Repository<InstagramPost>,
   ) {
@@ -85,8 +86,19 @@ export class InstagramService {
       await this.postRepository.save(post);
       this.logger.log(`Saved media ${mediaId} to DB`);
 
-      // Send to Telegram
-      await this.sendToTelegram(post, media.media_type, media.permalink);
+      // Emit event
+      await this.eventEmitter.emitAsync(
+        'media.received',
+        new MediaReceivedEvent(
+          post.mediaId,
+          post.caption,
+          post.mediaUrl,
+          media.media_type,
+          media.permalink,
+          media.timestamp,
+        ),
+      );
+      this.logger.log(`Emitted media.received event for ${mediaId}`);
 
       // Mark as forwarded
       post.forwarded = true;
@@ -119,35 +131,6 @@ export class InstagramService {
         `Failed to fetch media details for ${mediaId}`,
         err.stack,
       );
-      throw error;
-    }
-  }
-
-  private async sendToTelegram(
-    post: InstagramPost,
-    mediaType: string,
-    permalink: string,
-  ): Promise<void> {
-    const captionText = post.caption || '';
-    const messageText = `${captionText}\n\n${permalink}`;
-
-    try {
-      if (mediaType === 'IMAGE' && post.mediaUrl) {
-        await this.telegramService.sendPhoto(post.mediaUrl, captionText);
-      } else {
-        // For VIDEO or ALBUM, or missing mediaUrl, send link
-        await this.telegramService.sendMessage(messageText);
-      }
-      this.logger.log(`Sent media ${post.mediaId} to Telegram`);
-    } catch (error) {
-      const err = error as Error;
-      this.logger.error(
-        `Failed to send to Telegram: ${err.message}`,
-        err.stack,
-      );
-      // We don't throw here to ensure we don't crash the whole webhook process,
-      // but ideally we might want to retry later.
-      // The service has internal retry.
       throw error;
     }
   }

@@ -15,8 +15,8 @@ export class TelegramService {
     private readonly configService: ConfigService,
     private readonly httpService: HttpService,
   ) {
-    this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
-    this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID');
+    this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
+    this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID', '');
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 

@@ -1,12 +1,12 @@
+import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
-import { InjectRepository } from '@nestjs/typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Repository } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
 import { lastValueFrom } from 'rxjs';
-import { InstagramPost } from './entities/instagram-post.entity';
+import { Repository } from 'typeorm';
 import { WebhookEventDto } from './dto/webhook-event.dto';
+import { InstagramPost } from './entities/instagram-post.entity';
 import { MediaReceivedEvent } from './events/media-received.event';
 
 interface InstagramMedia {
@@ -31,8 +31,14 @@ export class InstagramService {
     @InjectRepository(InstagramPost)
     private readonly postRepository: Repository<InstagramPost>,
   ) {
-    this.accessToken = this.configService.get<string>('INSTAGRAM_ACCESS_TOKEN');
-    this.verifyToken = this.configService.get<string>('INSTAGRAM_VERIFY_TOKEN');
+    this.accessToken = this.configService.get<string>(
+      'INSTAGRAM_ACCESS_TOKEN',
+      '',
+    );
+    this.verifyToken = this.configService.get<string>(
+      'INSTAGRAM_VERIFY_TOKEN',
+      '',
+    );
   }
 
   validateVerifyToken(token: string): boolean {

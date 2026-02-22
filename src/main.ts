@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { json } from 'body-parser';
-import { urlencoded } from 'express';
+import { Request, urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
@@ -9,8 +9,8 @@ async function bootstrap() {
 
   app.use(
     json({
-      verify: (req: { rawBody?: Buffer } & Record<string, any>, _res, buf) => {
-        req.rawBody = buf;
+      verify: (req: Request, _res, buf) => {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
       },
     }),
   );
@@ -18,8 +18,8 @@ async function bootstrap() {
   app.use(
     urlencoded({
       extended: true,
-      verify: (req: { rawBody?: Buffer } & Record<string, any>, _res, buf) => {
-        req.rawBody = buf;
+      verify: (req: Request, _res, buf) => {
+        (req as Request & { rawBody?: Buffer }).rawBody = buf;
       },
     }),
   );

@@ -1,9 +1,9 @@
 import {
-  Entity,
   Column,
-  PrimaryGeneratedColumn,
   CreateDateColumn,
+  Entity,
   Index,
+  PrimaryGeneratedColumn,
 } from 'typeorm';
 
 @Entity('instagram_posts')

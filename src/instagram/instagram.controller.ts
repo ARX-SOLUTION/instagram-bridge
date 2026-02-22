@@ -1,4 +1,3 @@
-import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   Body,
@@ -17,10 +16,7 @@ import { InstagramService } from './instagram.service';
 export class InstagramController {
   private readonly logger = new Logger(InstagramController.name);
 
-  constructor(
-    private readonly instagramService: InstagramService,
-    private readonly httpService: HttpService,
-  ) {}
+  constructor(private readonly instagramService: InstagramService) {}
 
   @Get()
   verifyWebhook(@Query() query: WebhookVerifyDto): string {
@@ -50,45 +46,6 @@ export class InstagramController {
       const err = error as Error;
       this.logger.error('Error processing webhook', err.stack);
       throw error;
-    }
-  }
-
-  @Post('send-message')
-  async sendMessageToTelegram(
-    @Body() body: { chatId: string; message: string },
-  ): Promise<string> {
-    const { chatId, message } = body;
-
-    if (!chatId || !message) {
-      throw new BadRequestException('chatId and message are required');
-    }
-
-    const telegramBotToken = this.instagramService.getTelegramBotToken();
-    if (!telegramBotToken) {
-      throw new BadRequestException('Telegram bot token is not configured');
-    }
-
-    const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-
-    try {
-      const response = await this.httpService
-        .post(url, {
-          chat_id: chatId,
-          text: message,
-        })
-        .toPromise();
-
-      if (response?.status === 200) {
-        return 'Message sent successfully';
-      } else {
-        throw new Error('Failed to send message');
-      }
-    } catch (error: unknown) {
-      this.logger.error(
-        'Error sending message to Telegram',
-        (error as Error)?.stack,
-      );
-      throw new BadRequestException('Failed to send message');
     }
   }
 

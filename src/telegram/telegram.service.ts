@@ -16,13 +16,22 @@ export class TelegramService {
     private readonly httpService: HttpService,
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
-    this.chatId = this.configService.get<string>('CHAT_ID', '');
+    this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID', '');
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 
   async sendMessage(text: string): Promise<void> {
     await retry(
       () => this.send('sendMessage', { chat_id: this.chatId, text }),
+      3,
+      1000,
+      this.logger,
+    );
+  }
+
+  async sendMessageToChat(chatId: string, text: string): Promise<void> {
+    await retry(
+      () => this.send('sendMessage', { chat_id: chatId, text }),
       3,
       1000,
       this.logger,

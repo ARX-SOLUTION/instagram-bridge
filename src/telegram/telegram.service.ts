@@ -29,6 +29,15 @@ export class TelegramService {
     );
   }
 
+  async sendMessageToChat(chatId: string, text: string): Promise<void> {
+    await retry(
+      () => this.send('sendMessage', { chat_id: chatId, text }),
+      3,
+      1000,
+      this.logger,
+    );
+  }
+
   async sendPhoto(photoUrl: string, caption?: string): Promise<void> {
     await retry(
       () =>

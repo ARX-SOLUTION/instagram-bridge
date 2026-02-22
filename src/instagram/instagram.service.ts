@@ -304,10 +304,6 @@ export class InstagramService {
     }
   }
 
-  getTelegramBotToken(): string {
-    return this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
-  }
-
   async sendDirectMessage(username: string, message: string): Promise<any> {
     const url = `https://graph.facebook.com/v16.0/me/messages`;
     const accessToken = this.accessToken;

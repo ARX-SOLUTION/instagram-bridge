@@ -1,15 +1,26 @@
+import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger } from '@nestjs/common';
+import { json } from 'body-parser';
+import { urlencoded } from 'express';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      transform: true,
-      forbidNonWhitelisted: true,
+  app.use(
+    json({
+      verify: (req: { rawBody?: Buffer } & Record<string, any>, _res, buf) => {
+        req.rawBody = buf;
+      },
+    }),
+  );
+
+  app.use(
+    urlencoded({
+      extended: true,
+      verify: (req: { rawBody?: Buffer } & Record<string, any>, _res, buf) => {
+        req.rawBody = buf;
+      },
     }),
   );
 

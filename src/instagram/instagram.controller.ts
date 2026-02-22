@@ -7,12 +7,15 @@ import {
   Logger,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { WebhookVerifyDto } from './dto/webhook-verify.dto';
+import { MetaSignatureGuard } from './guards/meta-signature.guard';
 import { InstagramService } from './instagram.service';
 
 @Controller('instagram/webhook')
+@UseGuards(MetaSignatureGuard)
 export class InstagramController {
   private readonly logger = new Logger(InstagramController.name);
 
@@ -28,12 +31,11 @@ export class InstagramController {
       mode === 'subscribe' &&
       this.instagramService.validateVerifyToken(token)
     ) {
-      this.logger.log('Webhook verified successfully');
+      this.logger.log('Webhook verified');
       return challenge;
-    } else {
-      this.logger.error('Webhook verification failed');
-      throw new BadRequestException('Invalid verify token');
     }
+
+    throw new BadRequestException('Invalid verify token');
   }
 
   @Post()
@@ -46,28 +48,6 @@ export class InstagramController {
       const err = error as Error;
       this.logger.error('Error processing webhook', err.stack);
       throw error;
-    }
-  }
-
-  @Post('send-instagram-message')
-  async sendMessageToInstagram(
-    @Body() body: { username: string; message: string },
-  ): Promise<string> {
-    const { username, message } = body;
-
-    if (!username || !message) {
-      throw new BadRequestException('username and message are required');
-    }
-
-    try {
-      await this.instagramService.sendDirectMessage(username, message);
-      return 'Message sent successfully';
-    } catch (error: unknown) {
-      this.logger.error(
-        'Error sending message to Instagram',
-        (error as Error)?.stack,
-      );
-      throw new BadRequestException('Failed to send message');
     }
   }
 }

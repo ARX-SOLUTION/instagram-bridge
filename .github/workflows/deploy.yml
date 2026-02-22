@@ -144,17 +144,17 @@ jobs:
 
             cd ${PROJECT_PATH}
 
-            docker compose -f docker-compose.prod.yml down --remove-orphans || true
+            docker compose down --remove-orphans || true
 
             git pull origin main
 
             docker pull ${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest
 
-            docker compose -f docker-compose.prod.yml up -d
+            docker compose up -d
 
             sleep 10
 
-            docker compose -f docker-compose.prod.yml ps
+            docker compose ps
 
             docker image prune -f
           ENDSSH

@@ -2,9 +2,10 @@ version: '3.8'
 
 services:
   api:
+    container_name: instagram-bridge-api
     build: .
     ports:
-      - "3000:3000"
+      - "3100:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
@@ -20,9 +21,10 @@ services:
     depends_on:
       - db
     networks:
-      - app-network
+      - instagram-bridge-network
 
   db:
+    container_name: instagram-bridge-db
     image: postgres:15-alpine
     restart: always
     environment:
@@ -30,27 +32,15 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: instagram_bridge
     ports:
-      - "5432:5432"
+      - "5462:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - instagram-bridge-pgdata:/var/lib/postgresql/data
     networks:
-      - app-network
-
-  pgadmin:
-    image: dpage/pgadmin4
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: admin
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
-    networks:
-      - app-network
+      - instagram-bridge-network
 
 networks:
-  app-network:
+  instagram-bridge-network:
     driver: bridge
 
 volumes:
-  postgres_data:
+  instagram-bridge-pgdata:

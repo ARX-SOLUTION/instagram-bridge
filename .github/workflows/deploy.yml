@@ -150,28 +150,28 @@ jobs:
             docker image prune -f
           ENDSSH
 
-      - name: 🌐 Setup Nginx config
-        env:
-          SERVER_HOST: ${{ secrets.SERVER_HOST }}
-          SERVER_USER: ${{ secrets.SERVER_USER }}
-          PROJECT_NAME: ${{ env.PROJECT_NAME }}
-          APP_PORT: ${{ env.APP_PORT }}
-          APP_DOMAIN: ${{ env.APP_DOMAIN }}
-        run: |
-          ssh ${SERVER_USER}@${SERVER_HOST} bash << 'ENDSSH'
-            set -e
-            CONFIG_PATH="/etc/nginx/sites-available/${PROJECT_NAME}"
-            if [ ! -f "$CONFIG_PATH" ]; then
-              sudo sed "s/PROJECT_DOMAIN/${APP_DOMAIN}/g; s/PROJECT_PORT/${APP_PORT}/g" \
-                /home/deploy/nginx-template.conf > /tmp/${PROJECT_NAME}.conf
-              sudo mv /tmp/${PROJECT_NAME}.conf $CONFIG_PATH
-              sudo ln -sf $CONFIG_PATH /etc/nginx/sites-enabled/${PROJECT_NAME}
-              sudo nginx -t && sudo systemctl reload nginx
-              echo '✅ Nginx config created for ${PROJECT_NAME}'
-            else
-              echo '⏭ Nginx config already exists, skipping'
-            fi
-          ENDSSH
+      # - name: 🌐 Setup Nginx config
+      #   env:
+      #     SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      #     SERVER_USER: ${{ secrets.SERVER_USER }}
+      #     PROJECT_NAME: ${{ env.PROJECT_NAME }}
+      #     APP_PORT: ${{ env.APP_PORT }}
+      #     APP_DOMAIN: ${{ env.APP_DOMAIN }}
+      #   run: |
+      #     ssh ${SERVER_USER}@${SERVER_HOST} bash << 'ENDSSH'
+      #       set -e
+      #       CONFIG_PATH="/etc/nginx/sites-available/${PROJECT_NAME}"
+      #       if [ ! -f "$CONFIG_PATH" ]; then
+      #         sudo sed "s/PROJECT_DOMAIN/${APP_DOMAIN}/g; s/PROJECT_PORT/${APP_PORT}/g" \
+      #           /home/deploy/nginx-template.conf > /tmp/${PROJECT_NAME}.conf
+      #         sudo mv /tmp/${PROJECT_NAME}.conf $CONFIG_PATH
+      #         sudo ln -sf $CONFIG_PATH /etc/nginx/sites-enabled/${PROJECT_NAME}
+      #         sudo nginx -t && sudo systemctl reload nginx
+      #         echo '✅ Nginx config created for ${PROJECT_NAME}'
+      #       else
+      #         echo '⏭ Nginx config already exists, skipping'
+      #       fi
+      #     ENDSSH
 
       # - name: 🔍 Health Check
       #   run: |

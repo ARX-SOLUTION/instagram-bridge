@@ -1,0 +1,40 @@
+mkdir -p /home/deploy/shared
+cat > /home/deploy/shared/docker-compose.yml << 'EOF'
+services:
+  postgres:
+    image: postgres:16
+    container_name: shared_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: supper_user
+      POSTGRES_PASSWORD: P@s$w0rd-12345!
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5435:5432"
+    networks:
+      - shared_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: shared_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - shared_network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  shared_network:
+    driver: bridge
+    name: shared_network
+EOF
+
+cd /home/deploy/shared
+docker compose up -d

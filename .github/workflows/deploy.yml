@@ -90,13 +90,15 @@ jobs:
             set -e
             sudo mkdir -p ${PROJECT_PATH} && sudo chown -R deploy:deploy ${PROJECT_PATH}
             cat > ${PROJECT_PATH}/.env
+            echo 'DOCKER_IMAGE=${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest' >> ${PROJECT_PATH}/.env
             echo '${DOCKER_HUB_TOKEN}' | docker login -u '${DOCKER_HUB_USERNAME}' --password-stdin
-            docker pull ${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest
             cd ${PROJECT_PATH}
-            docker compose up -d --force-recreate
+            docker compose down --remove-orphans || true
+            docker rmi ${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest || true
+            docker pull ${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest
+            docker compose up -d
             sleep 5
             docker compose ps
-            docker image prune -f
           "
 
       - name: 📢 Telegram notification

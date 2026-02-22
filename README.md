@@ -88,6 +88,60 @@ npm run start:dev
 
 - `GET /instagram/webhook`: Used by Facebook for verification (hub.challenge).
 - `POST /instagram/webhook`: Receives webhook events.
+- `POST /instagram/webhook/send-message`: Sends a Telegram message to a specific chat ID.
+
+## Production URL bo'yicha tezkor yo'riqnoma
+
+Loyiha productionda quyidagi domen ostida ishlaydi:
+
+- `https://its.arxsolution.uz`
+
+### 1) Health tekshirish
+
+```bash
+curl --location 'https://its.arxsolution.uz/health'
+```
+
+Kutilgan natija: server ishlayotgan bo'lsa, health endpoint javob qaytaradi.
+
+### 2) Telegram'ga xabar yuborish
+
+Quyidagi endpoint orqali ixtiyoriy chat/channel'ga xabar yuborishingiz mumkin:
+
+```bash
+curl --location 'https://its.arxsolution.uz/instagram/webhook/send-message' \
+--header 'Content-Type: application/json' \
+--data '{
+  "chatId": "-1003814144946",
+  "message": "Xabar matni"
+}'
+```
+
+Kutilgan muvaffaqiyatli javob:
+
+```text
+Message sent successfully
+```
+
+### 3) Instagram webhook verify sozlash (Facebook Developer Portal)
+
+- **Callback URL:** `https://its.arxsolution.uz/instagram/webhook`
+- **Verify Token:** `.env` dagi `INSTAGRAM_VERIFY_TOKEN` bilan bir xil bo'lishi kerak.
+
+Webhook verify testi uchun:
+
+```bash
+curl "https://its.arxsolution.uz/instagram/webhook?hub.mode=subscribe&hub.verify_token=<VERIFY_TOKEN>&hub.challenge=123456"
+```
+
+Agar token to'g'ri bo'lsa, javobda `123456` qaytadi.
+
+### 4) Muammo bo'lsa tekshirish ro'yxati
+
+- `chatId` to'g'ri ekanini tekshiring (kanal/guruh uchun odatda manfiy son bo'ladi).
+- `TELEGRAM_BOT_TOKEN` serverda sozlangan bo'lishi kerak.
+- Bot chatga qo'shilgan va xabar yuborish huquqi borligini tekshiring.
+- 400 xato chiqsa, request body'da `chatId` va `message` mavjudligini tekshiring.
 
 ## Database Schema
 

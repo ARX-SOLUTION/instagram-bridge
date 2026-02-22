@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  app:
+    container_name: instagram-bridge-app
+    image: ${DOCKER_IMAGE:-instagram-bridge:latest}
+    restart: always
+    ports:
+      - "3100:3000"
+    env_file:
+      - .env
+    depends_on:
+      - db
+    networks:
+      - instagram-bridge-network
+
+  db:
+    container_name: instagram-bridge-db
+    image: postgres:15-alpine
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
+    ports:
+      - "5462:5432"
+    volumes:
+      - instagram-bridge-pgdata:/var/lib/postgresql/data
+    networks:
+      - instagram-bridge-network
+
+networks:
+  instagram-bridge-network:
+    driver: bridge
+
+volumes:
+  instagram-bridge-pgdata:

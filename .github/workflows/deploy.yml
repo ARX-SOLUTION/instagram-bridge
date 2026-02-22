@@ -117,7 +117,7 @@ jobs:
           PROJECT_PATH: ${{ env.PROJECT_PATH }}
           ENV_FILE_CONTENT: ${{ secrets.ENV_FILE }}
         run: |
-          ssh ${SERVER_USER}@${SERVER_HOST} "mkdir -p ${PROJECT_PATH}"
+          ssh ${SERVER_USER}@${SERVER_HOST} "sudo mkdir -p ${PROJECT_PATH} && sudo chown -R deploy:deploy ${PROJECT_PATH}"
           printf '%s' "${ENV_FILE_CONTENT}" | ssh ${SERVER_USER}@${SERVER_HOST} "cat > ${PROJECT_PATH}/.env"
 
       - name: 🚀 Deploy to Server

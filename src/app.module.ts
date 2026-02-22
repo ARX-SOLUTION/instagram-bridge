@@ -1,11 +1,12 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { AppController } from './app.controller';
+import { LoggerMiddleware } from './common/logger.middleware';
+import configuration from './config/configuration';
 import { DatabaseModule } from './database/database.module';
 import { InstagramModule } from './instagram/instagram.module';
 import { TelegramModule } from './telegram/telegram.module';
-import { AppController } from './app.controller';
-import configuration from './config/configuration';
 
 @Module({
   controllers: [AppController],
@@ -20,4 +21,8 @@ import configuration from './config/configuration';
     TelegramModule,
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(LoggerMiddleware).forRoutes('*');
+  }
+}

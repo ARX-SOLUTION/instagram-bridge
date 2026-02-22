@@ -274,11 +274,10 @@ export class InstagramService {
       post.forwarded = true;
       await this.postRepository.save(post);
       this.logger.log(`Marked media ${mediaId} as forwarded`);
-    } catch (error) {
-      const err = error as Error;
+    } catch (error: unknown) {
       this.logger.error(
-        `Error processing media ${mediaId}: ${err.message}`,
-        err.stack,
+        `Error processing media ${mediaId}: ${(error as Error).message}`,
+        (error as Error).stack,
       );
     }
   }
@@ -302,6 +301,50 @@ export class InstagramService {
         err.stack,
       );
       throw error;
+    }
+  }
+
+  getTelegramBotToken(): string {
+    return this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
+  }
+
+  async sendDirectMessage(username: string, message: string): Promise<any> {
+    const url = `https://graph.facebook.com/v16.0/me/messages`;
+    const accessToken = this.accessToken;
+
+    if (!accessToken) {
+      throw new Error('Instagram access token is not configured');
+    }
+
+    try {
+      const response = await this.httpService
+        .post(
+          url,
+          {
+            recipient: { username },
+            message: { text: message },
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          },
+        )
+        .toPromise();
+
+      if (!response) {
+        throw new Error('No response received from Instagram API');
+      }
+
+      return response.data;
+    } catch (error: unknown) {
+      this.logger.error(
+        'Failed to send Instagram message',
+        (error as Error)?.stack,
+      );
+      throw new Error(
+        (error as Error)?.message || 'Failed to send Instagram message',
+      );
     }
   }
 }

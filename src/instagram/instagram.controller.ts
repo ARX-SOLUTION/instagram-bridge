@@ -22,10 +22,7 @@ interface SendTelegramMessageDto {
 export class InstagramController {
   private readonly logger = new Logger(InstagramController.name);
 
-  constructor(
-    private readonly instagramService: InstagramService,
-    private readonly telegramService: TelegramService,
-  ) {}
+  constructor(private readonly instagramService: InstagramService) {}
 
   @Get()
   verifyWebhook(@Query() query: WebhookVerifyDto): string {
@@ -56,13 +53,6 @@ export class InstagramController {
       this.logger.error('Error processing webhook', err.stack);
       throw error;
     }
-  }
-
-  @Post('send-message')
-  async sendMessageToTelegram(
-    @Body() body: SendTelegramMessageDto,
-  ): Promise<string> {
-    return this.sendTelegramMessage(body);
   }
 
   @Post('send-instagram-message')

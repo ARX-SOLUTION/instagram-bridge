@@ -11,6 +11,12 @@ import {
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { WebhookVerifyDto } from './dto/webhook-verify.dto';
 import { InstagramService } from './instagram.service';
+import { TelegramService } from '../telegram/telegram.service';
+
+interface SendTelegramMessageDto {
+  chatId: string;
+  message: string;
+}
 
 @Controller('instagram/webhook')
 export class InstagramController {
@@ -73,6 +79,31 @@ export class InstagramController {
     } catch (error: unknown) {
       this.logger.error(
         'Error sending message to Instagram',
+        (error as Error)?.stack,
+      );
+      throw new BadRequestException('Failed to send message');
+    }
+  }
+
+  private async sendTelegramMessage(
+    body: SendTelegramMessageDto,
+  ): Promise<string> {
+    const { chatId, message } = body;
+
+    if (!chatId || !message) {
+      throw new BadRequestException('chatId and message are required');
+    }
+
+    if (!this.instagramService.getTelegramBotToken()) {
+      throw new BadRequestException('Telegram bot token is not configured');
+    }
+
+    try {
+      await this.telegramService.sendMessageToChat(chatId, message);
+      return 'Message sent successfully';
+    } catch (error: unknown) {
+      this.logger.error(
+        'Error sending message to Telegram',
         (error as Error)?.stack,
       );
       throw new BadRequestException('Failed to send message');

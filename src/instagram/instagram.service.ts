@@ -46,33 +46,197 @@ export class InstagramService {
   }
 
   async processWebhookEvent(event: WebhookEventDto): Promise<void> {
-    this.logger.log('Received Instagram Webhook Event');
+    this.logger.log(
+      `Webhook received | object=${event.object} | entries=${event.entry.length}`,
+    );
+    this.logger.debug(`Raw webhook payload: ${JSON.stringify(event)}`);
 
     for (const entry of event.entry) {
+      this.logger.log(`Processing entry | id=${entry.id}`);
+
       for (const change of entry.changes) {
-        if (change.field === 'mentions' || change.field === 'comments') {
-          // We are interested in new posts, usually field is strictly not defined in standard basic display API webhooks but graph API webhooks use specific fields.
-          // Assuming we subscribe to 'media' or similar relevant fields.
-          // However, the prompt implies receiving "new posts".
-          // The structure of the change value contains the media ID.
+        this.logger.log(
+          `Webhook change | field="${change.field}" | entry=${entry.id}`,
+        );
+        this.logger.debug(`Change value: ${JSON.stringify(change.value)}`);
+
+        switch (change.field) {
+          case 'feed': {
+            this.logger.log('Event type: NEW FEED POST');
+            const mediaId =
+              this.getStr(change.value, 'media_id') ||
+              this.getStr(change.value, 'id');
+            if (mediaId) {
+              await this.processMedia(mediaId);
+            } else {
+              this.logger.warn(
+                `Feed event has no media_id: ${JSON.stringify(change.value)}`,
+              );
+            }
+            break;
+          }
+
+          case 'mentions': {
+            this.logger.log('Event type: MENTION');
+            const mediaId =
+              this.getStr(change.value, 'media_id') ||
+              this.getStr(change.value, 'id');
+            if (mediaId) {
+              await this.processMedia(mediaId);
+            } else {
+              this.logger.warn(
+                `Mention event has no media_id: ${JSON.stringify(change.value)}`,
+              );
+            }
+            break;
+          }
+
+          case 'comments': {
+            this.logger.log('Event type: COMMENT');
+            this.handleComment(change.value);
+            break;
+          }
+
+          case 'messages': {
+            this.logger.log('Event type: DIRECT MESSAGE');
+            this.handleMessage(change.value);
+            break;
+          }
+
+          case 'messaging_seen': {
+            this.logger.log('Event type: MESSAGE SEEN (read receipt)');
+            this.logger.debug(`Read receipt: ${JSON.stringify(change.value)}`);
+            break;
+          }
+
+          case 'messaging_postbacks': {
+            this.logger.log('Event type: MESSAGING POSTBACK');
+            this.logger.debug(`Postback data: ${JSON.stringify(change.value)}`);
+            break;
+          }
+
+          case 'messaging_referrals': {
+            this.logger.log('Event type: MESSAGING REFERRAL');
+            this.logger.debug(`Referral data: ${JSON.stringify(change.value)}`);
+            break;
+          }
+
+          case 'story_insights': {
+            this.logger.log('Event type: STORY INSIGHTS');
+            this.handleStoryInsight(change.value);
+            break;
+          }
+
+          case 'live_comments': {
+            this.logger.log('Event type: LIVE COMMENT');
+            this.logger.debug(`Live comment: ${JSON.stringify(change.value)}`);
+            break;
+          }
+
+          case 'standby': {
+            this.logger.log('Event type: STANDBY');
+            this.logger.debug(`Standby data: ${JSON.stringify(change.value)}`);
+            break;
+          }
+
+          default: {
+            this.logger.warn(`Unknown webhook field: "${change.field}"`);
+            this.logger.warn(
+              `Unknown field payload: ${JSON.stringify(change.value)}`,
+            );
+            break;
+          }
         }
-
-        // For simplicity and to cover most cases, we just look for an ID in the value
-        const mediaId = change.value?.id;
-
-        if (!mediaId) {
-          this.logger.warn('No media ID found in webhook change');
-          continue;
-        }
-
-        await this.processMedia(mediaId);
       }
     }
+
+    this.logger.log('Webhook processing complete');
+  }
+
+  /**
+   * Safely access a nested property and return it as a string.
+   * Supports dot-notation paths like "from.username".
+   * Returns fallback if the value is null/undefined.
+   */
+  private getStr(
+    obj: Record<string, unknown>,
+    path: string,
+    fallback = '',
+  ): string {
+    const keys = path.split('.');
+    let current: unknown = obj;
+
+    for (const key of keys) {
+      if (
+        current !== null &&
+        current !== undefined &&
+        typeof current === 'object'
+      ) {
+        current = (current as Record<string, unknown>)[key];
+      } else {
+        return fallback;
+      }
+    }
+
+    if (current === null || current === undefined) return fallback;
+    if (typeof current === 'string') return current;
+    if (typeof current === 'number' || typeof current === 'boolean') {
+      return current.toString();
+    }
+    return JSON.stringify(current);
+  }
+
+  private handleComment(value: Record<string, unknown>): void {
+    const commentId = this.getStr(value, 'id', 'unknown');
+    const text = this.getStr(value, 'text');
+    const from =
+      this.getStr(value, 'from.username') ||
+      this.getStr(value, 'from.id', 'unknown');
+    const mediaId = this.getStr(value, 'media.id');
+
+    this.logger.log(
+      `Comment | id=${commentId} | from=${from} | text="${text}"`,
+    );
+    this.logger.debug(`Full comment payload: ${JSON.stringify(value)}`);
+
+    if (mediaId) {
+      this.logger.log(`Comment is on media ${mediaId}`);
+    }
+  }
+
+  private handleMessage(value: Record<string, unknown>): void {
+    const senderId =
+      this.getStr(value, 'sender.id') ||
+      this.getStr(value, 'from.id', 'unknown');
+    const messageText =
+      this.getStr(value, 'message.text') || this.getStr(value, 'text');
+    const messageId =
+      this.getStr(value, 'message.mid') || this.getStr(value, 'mid', 'unknown');
+
+    this.logger.log(
+      `DM | id=${messageId} | sender=${senderId} | text="${messageText}"`,
+    );
+    this.logger.debug(`Full message payload: ${JSON.stringify(value)}`);
+  }
+
+  private handleStoryInsight(value: Record<string, unknown>): void {
+    const mediaId =
+      this.getStr(value, 'media_id') || this.getStr(value, 'id', 'unknown');
+    const impressions = this.getStr(value, 'impressions', 'N/A');
+    const reach = this.getStr(value, 'reach', 'N/A');
+    const replies = this.getStr(value, 'replies', 'N/A');
+
+    this.logger.log(
+      `Story insight | media=${mediaId} | impressions=${impressions} | reach=${reach} | replies=${replies}`,
+    );
+    this.logger.debug(`Full story insight payload: ${JSON.stringify(value)}`);
   }
 
   private async processMedia(mediaId: string): Promise<void> {
     // Idempotency check
-    const existing = await this.postRepository.findOne({ where: { mediaId } });
+    const existing = await this.postRepository.findOne({
+      where: { mediaId },
+    });
     if (existing) {
       this.logger.log(`Media ${mediaId} already processed. Skipping.`);
       return;
@@ -87,7 +251,7 @@ export class InstagramService {
         mediaId: media.id,
         caption: media.caption,
         mediaUrl: media.media_url,
-        createdAt: new Date(media.timestamp), // or current date if missing
+        createdAt: new Date(media.timestamp),
       });
       await this.postRepository.save(post);
       this.logger.log(`Saved media ${mediaId} to DB`);

@@ -1,6 +1,6 @@
+import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { HttpService } from '@nestjs/axios';
 import { lastValueFrom } from 'rxjs';
 import { retry } from '../common/utils/retry.util';
 
@@ -16,7 +16,7 @@ export class TelegramService {
     private readonly httpService: HttpService,
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
-    this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID', '');
+    this.chatId = this.configService.get<string>('CHAT_ID', '');
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 

@@ -50,160 +50,154 @@ export class InstagramService {
     this.logger.log(
       `Webhook received | object=${event.object} | entries=${event.entry.length}`,
     );
-    this.logger.debug(`Raw webhook payload: ${JSON.stringify(event)}`);
 
     for (const entry of event.entry) {
       this.logger.log(`Processing entry | id=${entry.id}`);
 
-      for (const change of entry.changes) {
-        this.logger.log(
-          `Webhook change | field="${change.field}" | entry=${entry.id}`,
-        );
-        this.logger.debug(`Change value: ${JSON.stringify(change.value)}`);
+      // =========================================================
+      // 1. KOMMENTLAR, POSTLAR VA MENTIONLAR (changes)
+      // =========================================================
+      if (entry.changes && Array.isArray(entry.changes)) {
+        for (const change of entry.changes) {
+          this.logger.log(`Webhook change | field="${change.field}"`);
 
-        switch (change.field) {
-          case 'feed': {
-            this.logger.log('Event type: NEW FEED POST');
-            const mediaId =
-              this.getStr(change.value, 'media_id') ||
-              this.getStr(change.value, 'id');
-            if (mediaId) {
-              await this.processMedia(mediaId);
-            } else {
-              this.logger.warn(
-                `Feed event has no media_id: ${JSON.stringify(change.value)}`,
-              );
+          switch (change.field) {
+            case 'feed':
+            case 'mentions': {
+              this.logger.log(`Event type: ${change.field.toUpperCase()}`);
+              const mediaId =
+                this.getStr(change.value, 'media_id') ||
+                this.getStr(change.value, 'id');
+              if (mediaId) {
+                await this.processMedia(mediaId);
+              } else {
+                this.logger.warn(
+                  `Event has no media_id: ${JSON.stringify(change.value)}`,
+                );
+              }
+              break;
             }
-            break;
-          }
 
-          case 'mentions': {
-            this.logger.log('Event type: MENTION');
-            const mediaId =
-              this.getStr(change.value, 'media_id') ||
-              this.getStr(change.value, 'id');
-            if (mediaId) {
-              await this.processMedia(mediaId);
-            } else {
-              this.logger.warn(
-                `Mention event has no media_id: ${JSON.stringify(change.value)}`,
+            case 'comments':
+            case 'live_comments': {
+              this.logger.log(`Event type: ${change.field.toUpperCase()}`);
+              this.handleComment(change.value);
+              await this.emitActivity(
+                'comment',
+                this.formatComment(change.value),
               );
+              break;
             }
-            break;
-          }
 
-          case 'comments': {
-            this.logger.log('Event type: COMMENT');
-            this.handleComment(change.value);
-            await this.emitActivity(
-              'comment',
-              this.formatComment(change.value),
+            case 'story_insights': {
+              this.logger.log('Event type: STORY INSIGHTS');
+              await this.emitActivity(
+                'story_insights',
+                this.formatStoryInsight(change.value),
+              );
+              break;
+            }
+
+            default: {
+              // Boshqa barcha changes turlari
+              this.logger.warn(`Unknown change field: "${change.field}"`);
+              await this.emitActivity(
+                change.field,
+                `❓ Unknown change event: ${change.field}`,
+              );
+              break;
+            }
+          }
+        }
+      }
+
+      // =========================================================
+      // 2. DIRECT XABARLAR VA REAKSIYALAR (messaging)
+      // =========================================================
+      if (entry.messaging) {
+        for (const msgEvent of entry.messaging) {
+          const senderId = msgEvent.sender?.id ?? 'unknown';
+
+          if (msgEvent.message?.text) {
+            const text = msgEvent.message.text;
+            this.logger.log(
+              `Event type: DIRECT MESSAGE | sender=${senderId} | text="${text}"`,
             );
-            break;
-          }
 
-          case 'messages': {
-            this.logger.log('Event type: DIRECT MESSAGE');
-            this.handleMessage(change.value);
             await this.emitActivity(
               'message',
-              this.formatMessage(change.value),
+              `✉️ Direct message\nSender ID: ${senderId}\nText: ${text}`,
             );
-            break;
-          }
 
-          case 'messaging_seen': {
-            this.logger.log('Event type: MESSAGE SEEN');
-            const seenSender = this.getStr(
-              change.value,
-              'sender.id',
-              'unknown',
-            );
+            if (msgEvent.sender?.id) {
+              const replyMessage = `Assalomu alaykum! Xabaringizni qabul qildik tez orada operatorlarimiz javob berishadi!\nSizning xabaringiz: "${text}"`;
+              await this.sendDirectMessage(msgEvent.sender.id, replyMessage);
+            }
+          } else if (msgEvent.read) {
+            this.logger.log(`Event type: MESSAGE SEEN | sender=${senderId}`);
             await this.emitActivity(
               'messaging_seen',
-              `👁 Message seen\nSender: ${seenSender}`,
+              `👁 Message seen\nSender: ${senderId}`,
             );
-            break;
-          }
-
-          case 'messaging_postbacks': {
-            this.logger.log('Event type: MESSAGING POSTBACK');
-            const payload = this.getStr(
-              change.value,
-              'postback.payload',
-              'unknown',
-            );
+          } else if (msgEvent.postback) {
+            this.logger.log(`Event type: POSTBACK | sender=${senderId}`);
             await this.emitActivity(
-              'messaging_postback',
-              `🔘 Postback\nPayload: ${payload}`,
+              'postback',
+              `🔘 Postback\nSender: ${senderId}\nPayload: ${msgEvent.postback.payload ?? 'N/A'}`,
             );
-            break;
-          }
-
-          case 'messaging_referrals': {
-            this.logger.log('Event type: MESSAGING REFERRAL');
-            const source = this.getStr(
-              change.value,
-              'referral.source',
-              'unknown',
+          } else {
+            this.logger.warn(
+              `Unknown messaging event: ${JSON.stringify(msgEvent)}`,
             );
-            await this.emitActivity(
-              'messaging_referral',
-              `🔗 Referral\nSource: ${source}`,
-            );
-            break;
-          }
-
-          case 'story_insights': {
-            this.logger.log('Event type: STORY INSIGHTS');
-            this.handleStoryInsight(change.value);
-            await this.emitActivity(
-              'story_insights',
-              this.formatStoryInsight(change.value),
-            );
-            break;
-          }
-
-          case 'live_comments': {
-            this.logger.log('Event type: LIVE COMMENT');
-            const liveText = this.getStr(change.value, 'text');
-            const liveFrom = this.getStr(
-              change.value,
-              'from.username',
-              'unknown',
-            );
-            await this.emitActivity(
-              'live_comment',
-              `🔴 Live comment\nFrom: ${liveFrom}\nText: ${liveText}`,
-            );
-            break;
-          }
-
-          case 'standby': {
-            this.logger.log('Event type: STANDBY');
-            break;
-          }
-
-          default: {
-            this.logger.warn(`Unknown webhook field: "${change.field}"`);
-            await this.emitActivity(
-              change.field,
-              `❓ Unknown event: ${change.field}\n${JSON.stringify(change.value)}`,
-            );
-            break;
           }
         }
       }
     }
-
-    this.logger.log('Webhook processing complete');
   }
 
-  /**
-   * Safely access a nested property and return it as a string.
-   * Supports dot-notation paths like "from.username".
-   * Returns fallback if the value is null/undefined.
-   */
+  // =========================================================
+  // JAVOB YUBORISH METODI (META GRAPH API)
+  // =========================================================
+  async sendDirectMessage(
+    recipientId: string,
+    messageText: string,
+  ): Promise<void> {
+    const url = `https://graph.facebook.com/v18.0/me/messages`;
+
+    if (!this.accessToken) {
+      this.logger.error('Instagram access token is not configured!');
+      return;
+    }
+
+    try {
+      this.logger.log(`Sending Auto-Reply to ID: ${recipientId}...`);
+
+      await lastValueFrom(
+        this.httpService.post(
+          url,
+          {
+            recipient: { id: recipientId },
+            message: { text: messageText },
+          },
+          {
+            params: { access_token: this.accessToken },
+          },
+        ),
+      );
+
+      this.logger.log(`Auto-Reply successfully sent to ${recipientId}`);
+    } catch (error) {
+      const err = error as Error & {
+        response?: { data?: { error?: { message?: string } } };
+      };
+      this.logger.error('Failed to send Auto-Reply message');
+      this.logger.error(err.response?.data?.error?.message || err.message);
+    }
+  }
+
+  // =========================================================
+  // YORDAMCHI FUNKSIYALAR
+  // =========================================================
   private getStr(
     obj: Record<string, unknown>,
     path: string,
@@ -233,49 +227,11 @@ export class InstagramService {
   }
 
   private handleComment(value: Record<string, unknown>): void {
-    const commentId = this.getStr(value, 'id', 'unknown');
     const text = this.getStr(value, 'text');
     const from =
       this.getStr(value, 'from.username') ||
       this.getStr(value, 'from.id', 'unknown');
-    const mediaId = this.getStr(value, 'media.id');
-
-    this.logger.log(
-      `Comment | id=${commentId} | from=${from} | text="${text}"`,
-    );
-    this.logger.debug(`Full comment payload: ${JSON.stringify(value)}`);
-
-    if (mediaId) {
-      this.logger.log(`Comment is on media ${mediaId}`);
-    }
-  }
-
-  private handleMessage(value: Record<string, unknown>): void {
-    const senderId =
-      this.getStr(value, 'sender.id') ||
-      this.getStr(value, 'from.id', 'unknown');
-    const messageText =
-      this.getStr(value, 'message.text') || this.getStr(value, 'text');
-    const messageId =
-      this.getStr(value, 'message.mid') || this.getStr(value, 'mid', 'unknown');
-
-    this.logger.log(
-      `DM | id=${messageId} | sender=${senderId} | text="${messageText}"`,
-    );
-    this.logger.debug(`Full message payload: ${JSON.stringify(value)}`);
-  }
-
-  private handleStoryInsight(value: Record<string, unknown>): void {
-    const mediaId =
-      this.getStr(value, 'media_id') || this.getStr(value, 'id', 'unknown');
-    const impressions = this.getStr(value, 'impressions', 'N/A');
-    const reach = this.getStr(value, 'reach', 'N/A');
-    const replies = this.getStr(value, 'replies', 'N/A');
-
-    this.logger.log(
-      `Story insight | media=${mediaId} | impressions=${impressions} | reach=${reach} | replies=${replies}`,
-    );
-    this.logger.debug(`Full story insight payload: ${JSON.stringify(value)}`);
+    this.logger.log(`Comment from ${from}: "${text}"`);
   }
 
   private async emitActivity(type: string, message: string): Promise<void> {
@@ -294,39 +250,24 @@ export class InstagramService {
     return `💬 New comment\nFrom: ${from}\nText: ${text}${mediaId ? `\nMedia: ${mediaId}` : ''}`;
   }
 
-  private formatMessage(value: Record<string, unknown>): string {
-    const senderId =
-      this.getStr(value, 'sender.id') ||
-      this.getStr(value, 'from.id', 'unknown');
-    const text =
-      this.getStr(value, 'message.text') || this.getStr(value, 'text');
-    return `✉️ Direct message\nFrom: ${senderId}\nText: ${text}`;
-  }
-
   private formatStoryInsight(value: Record<string, unknown>): string {
     const mediaId =
       this.getStr(value, 'media_id') || this.getStr(value, 'id', 'unknown');
     const impressions = this.getStr(value, 'impressions', 'N/A');
     const reach = this.getStr(value, 'reach', 'N/A');
-    const replies = this.getStr(value, 'replies', 'N/A');
-    return `📊 Story insight\nMedia: ${mediaId}\nImpressions: ${impressions}\nReach: ${reach}\nReplies: ${replies}`;
+    return `📊 Story insight\nMedia: ${mediaId}\nImpressions: ${impressions}\nReach: ${reach}`;
   }
 
   private async processMedia(mediaId: string): Promise<void> {
-    // Idempotency check
-    const existing = await this.postRepository.findOne({
-      where: { mediaId },
-    });
+    const existing = await this.postRepository.findOne({ where: { mediaId } });
     if (existing) {
       this.logger.log(`Media ${mediaId} already processed. Skipping.`);
       return;
     }
 
     try {
-      // Fetch media details
       const media = await this.fetchMediaDetails(mediaId);
 
-      // Save to DB
       const post = this.postRepository.create({
         mediaId: media.id,
         caption: media.caption,
@@ -336,7 +277,6 @@ export class InstagramService {
       await this.postRepository.save(post);
       this.logger.log(`Saved media ${mediaId} to DB`);
 
-      // Emit event
       await this.eventEmitter.emitAsync(
         'media.received',
         new MediaReceivedEvent(
@@ -350,10 +290,8 @@ export class InstagramService {
       );
       this.logger.log(`Emitted media.received event for ${mediaId}`);
 
-      // Mark as forwarded
       post.forwarded = true;
       await this.postRepository.save(post);
-      this.logger.log(`Marked media ${mediaId} as forwarded`);
     } catch (error: unknown) {
       this.logger.error(
         `Error processing media ${mediaId}: ${(error as Error).message}`,
@@ -381,46 +319,6 @@ export class InstagramService {
         err.stack,
       );
       throw error;
-    }
-  }
-
-  async sendDirectMessage(username: string, message: string): Promise<any> {
-    const url = `https://graph.facebook.com/v16.0/me/messages`;
-    const accessToken = this.accessToken;
-
-    if (!accessToken) {
-      throw new Error('Instagram access token is not configured');
-    }
-
-    try {
-      const response = await this.httpService
-        .post(
-          url,
-          {
-            recipient: { username },
-            message: { text: message },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        )
-        .toPromise();
-
-      if (!response) {
-        throw new Error('No response received from Instagram API');
-      }
-
-      return response.data;
-    } catch (error: unknown) {
-      this.logger.error(
-        'Failed to send Instagram message',
-        (error as Error)?.stack,
-      );
-      throw new Error(
-        (error as Error)?.message || 'Failed to send Instagram message',
-      );
     }
   }
 }

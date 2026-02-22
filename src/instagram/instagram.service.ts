@@ -7,6 +7,7 @@ import { lastValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { InstagramPost } from './entities/instagram-post.entity';
+import { InstagramActivityEvent } from './events/instagram-activity.event';
 import { MediaReceivedEvent } from './events/media-received.event';
 
 interface InstagramMedia {
@@ -94,55 +95,100 @@ export class InstagramService {
           case 'comments': {
             this.logger.log('Event type: COMMENT');
             this.handleComment(change.value);
+            await this.emitActivity(
+              'comment',
+              this.formatComment(change.value),
+            );
             break;
           }
 
           case 'messages': {
             this.logger.log('Event type: DIRECT MESSAGE');
             this.handleMessage(change.value);
+            await this.emitActivity(
+              'message',
+              this.formatMessage(change.value),
+            );
             break;
           }
 
           case 'messaging_seen': {
-            this.logger.log('Event type: MESSAGE SEEN (read receipt)');
-            this.logger.debug(`Read receipt: ${JSON.stringify(change.value)}`);
+            this.logger.log('Event type: MESSAGE SEEN');
+            const seenSender = this.getStr(
+              change.value,
+              'sender.id',
+              'unknown',
+            );
+            await this.emitActivity(
+              'messaging_seen',
+              `👁 Message seen\nSender: ${seenSender}`,
+            );
             break;
           }
 
           case 'messaging_postbacks': {
             this.logger.log('Event type: MESSAGING POSTBACK');
-            this.logger.debug(`Postback data: ${JSON.stringify(change.value)}`);
+            const payload = this.getStr(
+              change.value,
+              'postback.payload',
+              'unknown',
+            );
+            await this.emitActivity(
+              'messaging_postback',
+              `🔘 Postback\nPayload: ${payload}`,
+            );
             break;
           }
 
           case 'messaging_referrals': {
             this.logger.log('Event type: MESSAGING REFERRAL');
-            this.logger.debug(`Referral data: ${JSON.stringify(change.value)}`);
+            const source = this.getStr(
+              change.value,
+              'referral.source',
+              'unknown',
+            );
+            await this.emitActivity(
+              'messaging_referral',
+              `🔗 Referral\nSource: ${source}`,
+            );
             break;
           }
 
           case 'story_insights': {
             this.logger.log('Event type: STORY INSIGHTS');
             this.handleStoryInsight(change.value);
+            await this.emitActivity(
+              'story_insights',
+              this.formatStoryInsight(change.value),
+            );
             break;
           }
 
           case 'live_comments': {
             this.logger.log('Event type: LIVE COMMENT');
-            this.logger.debug(`Live comment: ${JSON.stringify(change.value)}`);
+            const liveText = this.getStr(change.value, 'text');
+            const liveFrom = this.getStr(
+              change.value,
+              'from.username',
+              'unknown',
+            );
+            await this.emitActivity(
+              'live_comment',
+              `🔴 Live comment\nFrom: ${liveFrom}\nText: ${liveText}`,
+            );
             break;
           }
 
           case 'standby': {
             this.logger.log('Event type: STANDBY');
-            this.logger.debug(`Standby data: ${JSON.stringify(change.value)}`);
             break;
           }
 
           default: {
             this.logger.warn(`Unknown webhook field: "${change.field}"`);
-            this.logger.warn(
-              `Unknown field payload: ${JSON.stringify(change.value)}`,
+            await this.emitActivity(
+              change.field,
+              `❓ Unknown event: ${change.field}\n${JSON.stringify(change.value)}`,
             );
             break;
           }
@@ -230,6 +276,40 @@ export class InstagramService {
       `Story insight | media=${mediaId} | impressions=${impressions} | reach=${reach} | replies=${replies}`,
     );
     this.logger.debug(`Full story insight payload: ${JSON.stringify(value)}`);
+  }
+
+  private async emitActivity(type: string, message: string): Promise<void> {
+    await this.eventEmitter.emitAsync(
+      'instagram.activity',
+      new InstagramActivityEvent(type, message),
+    );
+  }
+
+  private formatComment(value: Record<string, unknown>): string {
+    const from =
+      this.getStr(value, 'from.username') ||
+      this.getStr(value, 'from.id', 'unknown');
+    const text = this.getStr(value, 'text');
+    const mediaId = this.getStr(value, 'media.id');
+    return `💬 New comment\nFrom: ${from}\nText: ${text}${mediaId ? `\nMedia: ${mediaId}` : ''}`;
+  }
+
+  private formatMessage(value: Record<string, unknown>): string {
+    const senderId =
+      this.getStr(value, 'sender.id') ||
+      this.getStr(value, 'from.id', 'unknown');
+    const text =
+      this.getStr(value, 'message.text') || this.getStr(value, 'text');
+    return `✉️ Direct message\nFrom: ${senderId}\nText: ${text}`;
+  }
+
+  private formatStoryInsight(value: Record<string, unknown>): string {
+    const mediaId =
+      this.getStr(value, 'media_id') || this.getStr(value, 'id', 'unknown');
+    const impressions = this.getStr(value, 'impressions', 'N/A');
+    const reach = this.getStr(value, 'reach', 'N/A');
+    const replies = this.getStr(value, 'replies', 'N/A');
+    return `📊 Story insight\nMedia: ${mediaId}\nImpressions: ${impressions}\nReach: ${reach}\nReplies: ${replies}`;
   }
 
   private async processMedia(mediaId: string): Promise<void> {

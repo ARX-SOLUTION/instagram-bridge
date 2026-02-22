@@ -60,16 +60,8 @@ export class InstagramController {
     }
 
     try {
-      const response = (await this.instagramService.sendDirectMessage(
-        username,
-        message,
-      )) as { status: number };
-
-      if (response.status === 200) {
-        return 'Message sent successfully';
-      } else {
-        throw new Error('Failed to send message');
-      }
+      await this.instagramService.sendDirectMessage(username, message);
+      return 'Message sent successfully';
     } catch (error: unknown) {
       this.logger.error(
         'Error sending message to Instagram',

@@ -9,7 +9,7 @@ export default () => ({
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
-    chatId: process.env.TELEGRAM_CHAT_ID,
+    chatId: process.env.CHAT_ID,
   },
   instagram: {
     accessToken: process.env.INSTAGRAM_ACCESS_TOKEN,

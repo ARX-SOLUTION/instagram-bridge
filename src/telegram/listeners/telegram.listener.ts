@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { TelegramService } from '../telegram.service';
+import { InstagramActivityEvent } from '../../instagram/events/instagram-activity.event';
 import { MediaReceivedEvent } from '../../instagram/events/media-received.event';
 
 @Injectable()
@@ -24,7 +25,6 @@ ${event.permalink}`;
       if (event.mediaType === 'IMAGE' && event.mediaUrl) {
         await this.telegramService.sendPhoto(event.mediaUrl, captionText);
       } else {
-        // For VIDEO or ALBUM, or missing mediaUrl, send link
         await this.telegramService.sendMessage(messageText);
       }
       this.logger.log(
@@ -36,7 +36,24 @@ ${event.permalink}`;
         `Failed to process event for mediaId ${event.mediaId}: ${err.message}`,
         err.stack,
       );
-      throw error; // Propagate error so emitter knows it failed
+      throw error;
+    }
+  }
+
+  @OnEvent('instagram.activity', { async: true })
+  async handleActivity(event: InstagramActivityEvent) {
+    this.logger.log(`Instagram activity: ${event.type}`);
+
+    try {
+      await this.telegramService.sendMessage(
+        `📸 Instagram | ${event.type}\n\n${event.message}`,
+      );
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(
+        `Failed to forward ${event.type} to Telegram: ${err.message}`,
+        err.stack,
+      );
     }
   }
 }

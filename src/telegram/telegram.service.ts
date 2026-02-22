@@ -16,7 +16,7 @@ export class TelegramService {
     private readonly httpService: HttpService,
   ) {
     this.botToken = this.configService.get<string>('TELEGRAM_BOT_TOKEN', '');
-    this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID', '');
+    this.chatId = this.configService.get<string>('CHAT_ID', '');
     this.baseUrl = `https://api.telegram.org/bot${this.botToken}`;
   }
 
@@ -58,8 +58,12 @@ export class TelegramService {
       await lastValueFrom(this.httpService.post(url, data));
       this.logger.log(`Telegram ${method} successful`);
     } catch (error) {
-      const err = error as Error;
-      this.logger.error(`Telegram ${method} failed: ${err.message}`, err.stack);
+      const err = error as Error & { response?: { data?: unknown } };
+      const responseData = err.response?.data;
+      this.logger.error(
+        `Telegram ${method} failed: ${err.message}`,
+        responseData ? JSON.stringify(responseData) : err.stack,
+      );
       throw error;
     }
   }

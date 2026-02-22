@@ -141,7 +141,7 @@ jobs:
 
             docker pull ${DOCKER_HUB_USERNAME}/${PROJECT_NAME}:latest
 
-            docker compose up -d
+            docker compose up -d --force-recreate
 
             sleep 10
 

@@ -1,4 +1,3 @@
-import { HttpService } from '@nestjs/axios';
 import {
   BadRequestException,
   Body,
@@ -12,6 +11,12 @@ import {
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { WebhookVerifyDto } from './dto/webhook-verify.dto';
 import { InstagramService } from './instagram.service';
+import { TelegramService } from '../telegram/telegram.service';
+
+interface SendTelegramMessageDto {
+  chatId: string;
+  message: string;
+}
 
 @Controller('instagram/webhook')
 export class InstagramController {
@@ -19,7 +24,7 @@ export class InstagramController {
 
   constructor(
     private readonly instagramService: InstagramService,
-    private readonly httpService: HttpService,
+    private readonly telegramService: TelegramService,
   ) {}
 
   @Get()
@@ -55,41 +60,9 @@ export class InstagramController {
 
   @Post('send-message')
   async sendMessageToTelegram(
-    @Body() body: { chatId: string; message: string },
+    @Body() body: SendTelegramMessageDto,
   ): Promise<string> {
-    const { chatId, message } = body;
-
-    if (!chatId || !message) {
-      throw new BadRequestException('chatId and message are required');
-    }
-
-    const telegramBotToken = this.instagramService.getTelegramBotToken();
-    if (!telegramBotToken) {
-      throw new BadRequestException('Telegram bot token is not configured');
-    }
-
-    const url = `https://api.telegram.org/bot${telegramBotToken}/sendMessage`;
-
-    try {
-      const response = await this.httpService
-        .post(url, {
-          chat_id: chatId,
-          text: message,
-        })
-        .toPromise();
-
-      if (response?.status === 200) {
-        return 'Message sent successfully';
-      } else {
-        throw new Error('Failed to send message');
-      }
-    } catch (error: unknown) {
-      this.logger.error(
-        'Error sending message to Telegram',
-        (error as Error)?.stack,
-      );
-      throw new BadRequestException('Failed to send message');
-    }
+    return this.sendTelegramMessage(body);
   }
 
   @Post('send-instagram-message')
@@ -116,6 +89,31 @@ export class InstagramController {
     } catch (error: unknown) {
       this.logger.error(
         'Error sending message to Instagram',
+        (error as Error)?.stack,
+      );
+      throw new BadRequestException('Failed to send message');
+    }
+  }
+
+  private async sendTelegramMessage(
+    body: SendTelegramMessageDto,
+  ): Promise<string> {
+    const { chatId, message } = body;
+
+    if (!chatId || !message) {
+      throw new BadRequestException('chatId and message are required');
+    }
+
+    if (!this.instagramService.getTelegramBotToken()) {
+      throw new BadRequestException('Telegram bot token is not configured');
+    }
+
+    try {
+      await this.telegramService.sendMessageToChat(chatId, message);
+      return 'Message sent successfully';
+    } catch (error: unknown) {
+      this.logger.error(
+        'Error sending message to Telegram',
         (error as Error)?.stack,
       );
       throw new BadRequestException('Failed to send message');

@@ -1,12 +1,9 @@
 import { IsArray, IsObject, IsString, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 
-class WebhookEntry {
+class WebhookValue {
   @IsString()
-  id: string;
-
-  @IsArray()
-  changes: WebhookChange[];
+  id: string; // media_id
 }
 
 class WebhookChange {
@@ -17,9 +14,12 @@ class WebhookChange {
   value: WebhookValue;
 }
 
-class WebhookValue {
+class WebhookEntry {
   @IsString()
-  id: string; // media_id
+  id: string;
+
+  @IsArray()
+  changes: WebhookChange[];
 }
 
 export class WebhookEventDto {

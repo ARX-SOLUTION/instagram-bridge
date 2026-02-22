@@ -12,7 +12,7 @@ env:
   # ↓↓↓ HAR YANGI LOYIHADA FAQAT SHUЛАРNI O'ZGARTIRING ↓↓↓
   PROJECT_NAME: instagram-bridge
   PROJECT_PATH: /home/deploy/projects/instagram-bridge
-  APP_PORT: 3013
+  APP_PORT: 3013  
   # ↑↑↑ YUQORIDAGILAR YETARLI, QOLGANIGA TEGMANG ↑↑↑
 
 jobs:
@@ -169,7 +169,7 @@ jobs:
       - name: 📢 Send Telegram notification
         if: always()
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          PROD_BOT_TOKEN: ${{ secrets.PROD_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_THREAD_ID: ${{ secrets.TELEGRAM_THREAD_ID }}
         run: |

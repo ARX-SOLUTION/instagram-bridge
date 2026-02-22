@@ -3,21 +3,15 @@ version: '3.8'
 services:
   api:
     container_name: instagram-bridge-api
+    image: ${DOCKER_IMAGE:-instagram-bridge-api:latest}
     build: .
+    restart: always
     ports:
       - "3100:3000"
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
-      - PORT=3000
       - DATABASE_HOST=db
-      - DATABASE_PORT=5432
-      - DATABASE_USER=postgres
-      - DATABASE_PASSWORD=postgres
-      - DATABASE_NAME=instagram_bridge
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - INSTAGRAM_ACCESS_TOKEN=${INSTAGRAM_ACCESS_TOKEN}
-      - INSTAGRAM_VERIFY_TOKEN=${INSTAGRAM_VERIFY_TOKEN}
     depends_on:
       - db
     networks:
@@ -28,9 +22,9 @@ services:
     image: postgres:15-alpine
     restart: always
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: instagram_bridge
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_NAME}
     ports:
       - "5462:5432"
     volumes:

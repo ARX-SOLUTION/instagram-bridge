@@ -1,0 +1,133 @@
+import express from "express";
+import dotenv from "dotenv";
+import crypto from "crypto";
+import axios from "axios";
+
+dotenv.config();
+
+const app = express();
+
+// ===== ENV =====
+const PORT = 3100;
+const VERIFY_TOKEN = process.env.INSTAGRAM_VERIFY_TOKEN || "itegram_maxfiy_kalit_998";
+const META_APP_SECRET = process.env.META_APP_SECRET || "";
+const SKIP_SIGNATURE = process.env.SKIP_SIGNATURE === "1";
+
+// Telegram (ixtiyoriy)
+const TG_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
+const TG_CHAT_ID = process.env.CHAT_ID || "";
+
+// ===== Helpers =====
+function truncate(str, max = 9000) {
+  if (!str) return "";
+  return str.length > max ? str.slice(0, max) + "…(truncated)" : str;
+}
+
+function safeHeaders(headers) {
+  const h = { ...headers };
+  if (h.authorization) h.authorization = "***";
+  if (h.cookie) h.cookie = "***";
+  return h;
+}
+
+async function telegramSend(text) {
+  if (!TG_BOT_TOKEN || !TG_CHAT_ID) return;
+  try {
+    await axios.post(`https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage`, {
+      chat_id: TG_CHAT_ID,
+      text: truncate(text, 3500),
+      disable_web_page_preview: true,
+    });
+  } catch (e) {
+    console.error("Telegram send failed:", e?.response?.data || e?.message);
+  }
+}
+
+function computeSignature(rawBodyBuffer) {
+  return "sha256=" + crypto.createHmac("sha256", META_APP_SECRET).update(rawBodyBuffer).digest("hex");
+}
+
+function verifyMetaSignature(req) {
+  const signature = req.header("X-Hub-Signature-256");
+  if (req.method === "GET") return true;
+  if (SKIP_SIGNATURE) return true;
+  if (!META_APP_SECRET || !signature) return false;
+  const raw = req.rawBody || Buffer.from("");
+  const expected = computeSignature(raw);
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+}
+
+// ===== RAW body capture =====
+app.use(express.json({ limit: "10mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
+app.use(express.urlencoded({ extended: true, limit: "10mb", verify: (req, _res, buf) => { req.rawBody = buf; } }));
+
+// ===== ROUTES =====
+
+// 1. HEALTH CHECK
+app.get("/health", (_req, res) => res.status(200).send("OK"));
+
+// 2. PRIVACY POLICY (Meta uchun maxsus sahifa)
+app.get("/privacy", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Privacy Policy - habarchi-IG</title>
+        <style>
+            body { font-family: sans-serif; line-height: 1.6; max-width: 800px; margin: 40px auto; padding: 20px; color: #333; }
+            h1 { color: #000; }
+            .content { background: #f9f9f9; padding: 20px; border-radius: 8px; border: 1px solid #ddd; }
+        </style>
+    </head>
+    <body>
+        <h1>Privacy Policy for habarchi-IG</h1>
+        <div class="content">
+            <p><strong>Last Updated: February 22, 2026</strong></p>
+            <p>At <strong>habarchi-IG</strong>, we prioritize your privacy. This policy explains how we handle data from Instagram.</p>
+            <h3>1. Data Collection</h3>
+            <p>We only receive data sent by Instagram through official Webhooks when you interact with our professional account (messages and comments).</p>
+            <h3>2. How We Use Data</h3>
+            <p>The data is used exclusively to provide automated replies and manage customer interactions. We do not use this data for marketing purposes without consent.</p>
+            <h3>3. Data Sharing</h3>
+            <p>We <strong>never</strong> sell, share, or distribute your personal data to third parties. All information is kept strictly within our messaging system.</p>
+            <h3>4. Data Security</h3>
+            <p>We use industry-standard encryption to ensure your messaging data is securely handled between Instagram and our servers.</p>
+            <h3>5. Your Rights</h3>
+            <p>You can request the deletion of your interaction data at any time by contacting us directly through Instagram DM.</p>
+        </div>
+    </body>
+    </html>
+  `);
+});
+
+// 3. WEBHOOK VERIFY (GET)
+app.get("/instagram/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+});
+
+// 4. WEBHOOK EVENT (POST)
+app.post("/instagram/webhook", async (req, res) => {
+  if (!verifyMetaSignature(req)) return res.status(401).send("Invalid signature");
+
+  const event = req.body;
+  console.log("🔥 NEW WEBHOOK:", JSON.stringify(event, null, 2));
+
+  // Process entries... (Sizning mavjud mantiqingiz)
+
+  await telegramSend(`IG Webhook ✅\n${JSON.stringify(event).slice(0, 3000)}`);
+  return res.status(200).send("EVENT_RECEIVED");
+});
+
+// ===== Start =====
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`Privacy Policy: http://its.arxsolution.uz/privacy`);
+});

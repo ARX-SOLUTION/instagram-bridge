@@ -5,20 +5,23 @@
   "author": "",
   "private": true,
   "license": "UNLICENSED",
+  "type": "module",
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
-    "start": "nest start",
-    "start:dev": "nest start --watch",
-    "start:debug": "nest start --debug --watch",
-    "start:prod": "node dist/main",
+    "start": "pm2 start ecosystem.config.cjs",
+    "start:dev": "pm2 start ecosystem.config.cjs --watch",
+    "start:debug": "pm2 start ecosystem.config.cjs --node-args='--inspect'",
+    "start:prod": "pm2 start ecosystem.config.cjs --env production",
     "lint": "eslint \"{src,apps,libs}/**/*.ts\" --fix",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "prepare": "husky"
+    "prepare": "husky",
+    "db:migrate": "drizzle-kit generate && drizzle-kit apply",
+    "db:seed": "ts-node drizzle/seed.ts"
   },
   "lint-staged": {
     "**/*.ts": [
@@ -37,6 +40,9 @@
     "axios": "^1.13.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
+    "dotenv": "^17.3.1",
+    "drizzle-kit": "^0.31.9",
+    "drizzle-orm": "^0.45.1",
     "pg": "^8.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

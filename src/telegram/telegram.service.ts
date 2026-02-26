@@ -116,7 +116,7 @@ export class TelegramService {
     );
   }
 
-  async sendBufferFile(
+aaaaaaaaaaaa  async sendBufferFile(
     method: Extract<
       TelegramMethod,
       'sendPhoto' | 'sendVideo' | 'sendAudio' | 'sendVoice' | 'sendDocument'

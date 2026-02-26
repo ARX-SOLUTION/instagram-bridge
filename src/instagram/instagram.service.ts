@@ -1,450 +1,807 @@
 import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { InjectRepository } from '@nestjs/typeorm';
+import * as crypto from 'crypto';
 import { lastValueFrom } from 'rxjs';
-import { Repository } from 'typeorm';
-import { CommonService } from '../common/common.service.js';
-import { TelegramService } from '../telegram/telegram.service.js';
-import { WebhookEventDto } from './dto/webhook-event.dto.js';
-import { InstagramPost } from './entities/instagram-post.entity.js';
-import { MediaReceivedEvent } from './events/media-received.event.js';
+import {
+  TelegramService,
+  TopicRoutingOptions,
+} from '../telegram/telegram.service';
 
-interface InstagramMedia {
-  id: string;
+interface InstagramUserInfo {
+  id?: string;
+  name?: string;
+  username?: string;
+}
+
+interface InstagramMediaInfo {
+  id?: string;
   caption?: string;
-  media_type: string;
+  media_type?: string;
   media_url?: string;
-  permalink: string;
-  timestamp: string;
+  thumbnail_url?: string;
+  permalink?: string;
+  timestamp?: string;
+  username?: string;
+}
+
+interface WebhookChangeValueFrom {
+  id?: string;
+  username?: string;
+}
+
+interface WebhookChangeValue {
+  from?: WebhookChangeValueFrom;
+  text?: string;
+  media_id?: string | number;
+  comment_id?: string | number;
+  id?: string | number;
+  target_id?: string | number;
+  event_id?: string | number;
+  [key: string]: unknown;
+}
+
+interface WebhookChange {
+  field?: string;
+  value?: WebhookChangeValue;
+}
+
+interface WebhookAttachmentPayload {
+  url?: string;
+  link?: string;
+  src?: string;
+  attachment_url?: string;
+  permalink_url?: string;
+  title?: string;
+  [key: string]: unknown;
+}
+
+interface WebhookAttachment {
+  type?: string;
+  payload?: WebhookAttachmentPayload;
+  [key: string]: unknown;
+}
+
+interface WebhookMessageBody {
+  mid?: string;
+  text?: string;
+  is_echo?: boolean;
+  attachments?: WebhookAttachment[];
+  [key: string]: unknown;
+}
+
+interface WebhookReactionBody {
+  mid?: string;
+  action?: string;
+  reaction?: string;
+  [key: string]: unknown;
+}
+
+interface WebhookReadBody {
+  watermark?: string | number;
+  [key: string]: unknown;
+}
+
+interface WebhookDeliveryBody {
+  watermark?: string | number;
+  [key: string]: unknown;
+}
+
+interface WebhookMessaging {
+  sender?: { id?: string; username?: string };
+  recipient?: { id?: string };
+  message?: WebhookMessageBody;
+  reaction?: WebhookReactionBody;
+  read?: WebhookReadBody;
+  delivery?: WebhookDeliveryBody;
+  postback?: Record<string, unknown>;
+  optin?: Record<string, unknown>;
+  referral?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+interface WebhookEntry {
+  id?: string;
+  time?: number;
+  changes?: WebhookChange[];
+  messaging?: WebhookMessaging[];
+}
+
+interface WebhookEvent {
+  object?: string;
+  entry?: WebhookEntry[];
+}
+
+interface DownloadResult {
+  buffer: Buffer;
+  contentType: string;
+}
+
+interface DmAttachmentContext {
+  userLink: string;
+  topicRouting: TopicRoutingOptions;
 }
 
 @Injectable()
 export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
-  private readonly accessToken: string;
-  private readonly verifyToken: string;
+  private readonly graphDmUrl = 'https://graph.instagram.com/v21.0/me/messages';
+  private readonly processedMessages = new Map<string, number>();
+
+  private readonly processedTtlMs = 10 * 60 * 1000;
+  private readonly processedMaxSize = 5000;
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly httpService: HttpService,
-    private readonly eventEmitter: EventEmitter2,
-    @InjectRepository(InstagramPost)
-    private readonly postRepository: Repository<InstagramPost>,
     private readonly telegramService: TelegramService,
-    private readonly commonService: CommonService,
-  ) {
-    this.accessToken = this.configService.get<string>(
-      'INSTAGRAM_ACCESS_TOKEN',
+    private readonly httpService: HttpService,
+  ) {}
+
+  validateVerifyToken(token?: string): boolean {
+    const verifyToken = this.configService.get<string>(
+      'instagram.verifyToken',
       '',
     );
-    this.verifyToken = this.configService.get<string>(
-      'INSTAGRAM_VERIFY_TOKEN',
-      '',
-    );
+    return !!token && token === verifyToken;
   }
 
-  validateVerifyToken(token: string): boolean {
-    return token === this.verifyToken;
-  }
+  async processWebhookEvent(event: WebhookEvent): Promise<void> {
+    this.logger.log('========== IG EVENT ==========');
+    this.logger.log(JSON.stringify(event, null, 2));
 
-  async processWebhookEvent(event: WebhookEventDto): Promise<void> {
-    this.logger.log(
-      `Webhook received | object=${event.object} | entries=${event.entry.length}`,
-    );
-    this.logger.debug(`Raw webhook payload: ${JSON.stringify(event)}`);
-
-    for (const entry of event.entry) {
-      this.logger.log(`Processing entry | id=${entry.id}`);
-
-      for (const change of entry.changes) {
-        this.logger.log(
-          `Webhook change | field="${change.field}" | entry=${entry.id}`,
-        );
-        this.logger.debug(`Change value: ${JSON.stringify(change.value)}`);
-
-        switch (change.field) {
-          case 'feed': {
-            this.logger.log('Event type: NEW FEED POST');
-            const mediaId =
-              this.getStr(change.value, 'media_id') ||
-              this.getStr(change.value, 'id');
-            if (mediaId) {
-              await this.processMedia(mediaId);
-            } else {
-              this.logger.warn(
-                `Feed event has no media_id: ${JSON.stringify(change.value)}`,
-              );
-            }
-            break;
-          }
-
-          case 'mentions': {
-            this.logger.log('Event type: MENTION');
-            const mediaId =
-              this.getStr(change.value, 'media_id') ||
-              this.getStr(change.value, 'id');
-            if (mediaId) {
-              await this.processMedia(mediaId);
-            } else {
-              this.logger.warn(
-                `Mention event has no media_id: ${JSON.stringify(change.value)}`,
-              );
-            }
-            break;
-          }
-
-          case 'comments': {
-            this.logger.log('Event type: COMMENT');
-            this.handleComment(change.value);
-            break;
-          }
-
-          case 'messages': {
-            this.logger.log('Event type: DIRECT MESSAGE');
-            this.handleMessage(change.value);
-            break;
-          }
-
-          case 'messaging_seen': {
-            this.logger.log('Event type: MESSAGE SEEN (read receipt)');
-            this.logger.debug(`Read receipt: ${JSON.stringify(change.value)}`);
-            break;
-          }
-
-          case 'messaging_postbacks': {
-            this.logger.log('Event type: MESSAGING POSTBACK');
-            this.logger.debug(`Postback data: ${JSON.stringify(change.value)}`);
-            break;
-          }
-
-          case 'messaging_referrals': {
-            this.logger.log('Event type: MESSAGING REFERRAL');
-            this.logger.debug(`Referral data: ${JSON.stringify(change.value)}`);
-            break;
-          }
-
-          case 'story_insights': {
-            this.logger.log('Event type: STORY INSIGHTS');
-            this.handleStoryInsight(change.value);
-            break;
-          }
-
-          case 'live_comments': {
-            this.logger.log('Event type: LIVE COMMENT');
-            this.logger.debug(`Live comment: ${JSON.stringify(change.value)}`);
-            break;
-          }
-
-          case 'standby': {
-            this.logger.log('Event type: STANDBY');
-            this.logger.debug(`Standby data: ${JSON.stringify(change.value)}`);
-            break;
-          }
-
-          default: {
-            this.logger.warn(`Unknown webhook field: "${change.field}"`);
-            this.logger.warn(
-              `Unknown field payload: ${JSON.stringify(change.value)}`,
-            );
-            break;
-          }
-        }
-      }
-    }
-
-    this.logger.log('Webhook processing complete');
-  }
-
-  /**
-   * Safely access a nested property and return it as a string.
-   * Supports dot-notation paths like "from.username".
-   * Returns fallback if the value is null/undefined.
-   */
-  private getStr(
-    obj: Record<string, unknown>,
-    path: string,
-    fallback = '',
-  ): string {
-    const keys = path.split('.');
-    let current: unknown = obj;
-
-    for (const key of keys) {
-      if (
-        current !== null &&
-        current !== undefined &&
-        typeof current === 'object'
-      ) {
-        current = (current as Record<string, unknown>)[key];
-      } else {
-        return fallback;
-      }
-    }
-
-    if (current === null || current === undefined) return fallback;
-    if (typeof current === 'string') return current;
-    if (typeof current === 'number' || typeof current === 'boolean') {
-      return current.toString();
-    }
-    return JSON.stringify(current);
-  }
-
-  private handleComment(value: Record<string, unknown>): void {
-    const commentId = this.getStr(value, 'id', 'unknown');
-    const text = this.getStr(value, 'text');
-    const from =
-      this.getStr(value, 'from.username') ||
-      this.getStr(value, 'from.id', 'unknown');
-    const mediaId = this.getStr(value, 'media.id');
-
-    this.logger.log(
-      `Comment | id=${commentId} | from=${from} | text="${text}"`,
-    );
-    this.logger.debug(`Full comment payload: ${JSON.stringify(value)}`);
-
-    if (mediaId) {
-      this.logger.log(`Comment is on media ${mediaId}`);
-    }
-  }
-
-  private handleMessage(value: Record<string, unknown>): void {
-    const senderId =
-      this.getStr(value, 'sender.id') ||
-      this.getStr(value, 'from.id', 'unknown');
-    const messageText =
-      this.getStr(value, 'message.text') || this.getStr(value, 'text');
-    const messageId =
-      this.getStr(value, 'message.mid') || this.getStr(value, 'mid', 'unknown');
-
-    this.logger.log(
-      `DM | id=${messageId} | sender=${senderId} | text="${messageText}"`,
-    );
-    this.logger.debug(`Full message payload: ${JSON.stringify(value)}`);
-  }
-
-  private handleStoryInsight(value: Record<string, unknown>): void {
-    const mediaId =
-      this.getStr(value, 'media_id') || this.getStr(value, 'id', 'unknown');
-    const impressions = this.getStr(value, 'impressions', 'N/A');
-    const reach = this.getStr(value, 'reach', 'N/A');
-    const replies = this.getStr(value, 'replies', 'N/A');
-
-    this.logger.log(
-      `Story insight | media=${mediaId} | impressions=${impressions} | reach=${reach} | replies=${replies}`,
-    );
-    this.logger.debug(`Full story insight payload: ${JSON.stringify(value)}`);
-  }
-
-  private async processMedia(mediaId: string): Promise<void> {
-    // Idempotency check
-    const existing = await this.postRepository.findOne({
-      where: { mediaId },
-    });
-    if (existing) {
-      this.logger.log(`Media ${mediaId} already processed. Skipping.`);
+    if (!event?.entry || !Array.isArray(event.entry)) {
+      const message =
+        '<b>Instagram Event</b>\n' +
+        'Turi: <code>entry.unknown</code>\n\n' +
+        `<pre>${this.escapeHtml(this.shortJson(event))}</pre>`;
+      await this.telegramService.sendHtmlMessage(message, {
+        topicKey: 'entry.unknown',
+        topicTitle: 'entry.unknown',
+      });
       return;
     }
 
-    try {
-      // Fetch media details
-      const media = await this.fetchMediaDetails(mediaId);
+    for (const entry of event.entry) {
+      await this.processEntry(entry);
+    }
+  }
 
-      // Save to DB
-      const post = this.postRepository.create({
-        mediaId: media.id,
-        caption: media.caption,
-        mediaUrl: media.media_url,
-        createdAt: new Date(media.timestamp),
+  private async processEntry(entry: WebhookEntry): Promise<void> {
+    const hasChanges = Array.isArray(entry.changes) && entry.changes.length > 0;
+    const hasMessaging =
+      Array.isArray(entry.messaging) && entry.messaging.length > 0;
+
+    if (!hasChanges && !hasMessaging) {
+      const entryKey = `entry:unknown:${this.hashObject(entry)}`;
+      if (this.isDuplicateKey(entryKey)) return;
+
+      this.cleanupProcessedMessages();
+      const entryMessage =
+        '<b>Instagram Entry Event</b>\n' +
+        'Turi: <code>entry.unknown</code>\n\n' +
+        `<pre>${this.escapeHtml(this.shortJson(entry))}</pre>`;
+
+      await this.telegramService.sendHtmlMessage(entryMessage, {
+        topicKey: 'entry.unknown',
+        topicTitle: 'entry.unknown',
       });
-      await this.postRepository.save(post);
-      this.logger.log(`Saved media ${mediaId} to DB`);
+      return;
+    }
 
-      // Emit event
-      await this.eventEmitter.emitAsync(
-        'media.received',
-        new MediaReceivedEvent(
-          post.mediaId,
-          post.caption,
-          post.mediaUrl,
-          media.media_type,
-          media.permalink,
-          media.timestamp,
-        ),
-      );
-      this.logger.log(`Emitted media.received event for ${mediaId}`);
+    if (Array.isArray(entry.changes)) {
+      for (const change of entry.changes) {
+        await this.processChange(change);
+      }
+    }
 
-      // Mark as forwarded
-      post.forwarded = true;
-      await this.postRepository.save(post);
-      this.logger.log(`Marked media ${mediaId} as forwarded`);
-    } catch (error: unknown) {
-      this.logger.error(
-        `Error processing media ${mediaId}: ${(error as Error).message}`,
-        (error as Error).stack,
-      );
+    if (Array.isArray(entry.messaging)) {
+      for (const msg of entry.messaging) {
+        await this.processMessagingEvent(msg);
+      }
     }
   }
 
-  private async fetchMediaDetails(mediaId: string): Promise<InstagramMedia> {
-    const url = `https://graph.instagram.com/${mediaId}`;
-    const params = {
-      fields: 'id,caption,media_type,media_url,permalink,timestamp',
-      access_token: this.accessToken,
-    };
-
-    try {
-      const response = await lastValueFrom(
-        this.httpService.get<InstagramMedia>(url, { params }),
-      );
-      return response.data;
-    } catch (error) {
-      const err = error as Error;
-      this.logger.error(
-        `Failed to fetch media details for ${mediaId}`,
-        err.stack,
-      );
-      throw error;
-    }
-  }
-
-  private async processChange(change: any): Promise<void> {
-    const changeType = this.commonService.getChangeEventType(change);
-    const changeKey = this.commonService.getChangeEventKey(change);
-    if (this.commonService.isDuplicateKey(changeKey)) return;
-    this.commonService.cleanupProcessedMessages();
+  private async processChange(change: WebhookChange): Promise<void> {
+    const changeType = this.getChangeEventType(change);
+    const changeKey = this.getChangeEventKey(change);
+    if (this.isDuplicateKey(changeKey)) return;
+    this.cleanupProcessedMessages();
 
     const value = change.value;
 
-    if (change?.field === 'media' && value?.media_id) {
-      const mediaId = String(value.media_id);
-      const mediaInfo = await this.getInstagramMediaInfo(mediaId);
-      const mediaType = String(mediaInfo?.media_type || '').toUpperCase();
-      const username = mediaInfo?.username || '';
-      const caption = mediaInfo?.caption || '';
-      const permalink = mediaInfo?.permalink || '';
-      const mediaUrl = mediaInfo?.media_url || mediaInfo?.thumbnail_url || '';
-
-      const isStory = mediaType === 'STORY';
-      const topicKey = isStory ? 'story' : 'posts';
-      const topicTitle = isStory ? '📖 Stories' : '📸 Posts';
-      const title = isStory ? 'Yangi Story (Instagram)' : 'Yangi Post (Instagram)';
-
-      const userLink = username
-        ? `<a href="https://instagram.com/${encodeURIComponent(username)}">${this.commonService.escapeHtml(username)}</a>`
-        : 'Instagram sahifa';
-
-      let tgMsg = `<b>${title}</b>\nKimdan: ${userLink}`;
-      if (caption) tgMsg += `\n\n${this.commonService.escapeHtml(caption)}`;
-      if (permalink) tgMsg += `\n\n${permalink}`;
-
-      await this.telegramService.sendToTelegramGroup(tgMsg, topicKey, topicTitle);
-
-      if (mediaUrl) {
-        try {
-          const { buffer, contentType } = await this.commonService.downloadBuffer(mediaUrl);
-          const ext = contentType.split('/')[1]?.split(';')[0] || 'jpg';
-          const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS';
-          const method = isVideo ? 'sendVideo' : 'sendPhoto';
-          const fieldName = isVideo ? 'video' : 'photo';
-          await this.telegramService.sendFileToTelegram(
-            method,
-            fieldName,
-            buffer,
-            `media.${ext}`,
-            contentType,
-            { parse_mode: 'HTML', supports_streaming: true },
-            topicKey,
-            topicTitle,
-          );
-        } catch (err) {
-          this.logger.error('Media rasm yuborishda xatolik:', err);
-        }
-      }
+    if (change.field === 'media' && value?.media_id) {
+      await this.processMediaChange(String(value.media_id));
       return;
     }
 
-    if (value && value.from) {
+    if (value?.from) {
       const username = value.from.username;
-      const text = value.text || 'Media/Boshqa narsa';
+      const text = this.normalizeText(value.text);
+      const userLink = this.createInstagramProfileLink(
+        username,
+        value.from.id,
+        {
+          fallbackPrefix: 'Foydalanuvchi ID',
+        },
+      );
 
-      const userLink = username
-        ? `<a href="https://instagram.com/${encodeURIComponent(username)}">${this.commonService.escapeHtml(username)}</a>`
-        : `<a href="https://instagram.com/">Foydalanuvchi ID: ${this.commonService.escapeHtml(value.from.id || '')}</a>`;
+      const message =
+        '<b>Yangi bildirishnoma (Instagram)</b>\n' +
+        `Kimdan: ${userLink}\n\n` +
+        `Xabar: ${this.escapeHtml(text)}`;
 
-      const tgMsg = `<b>Yangi bildirishnoma (Instagram)</b>\nKimdan: ${userLink}\n\nXabar: ${this.commonService.escapeHtml(text)}`;
-      await this.telegramService.sendToTelegramGroup(tgMsg, changeType, changeType);
+      await this.telegramService.sendHtmlMessage(message, {
+        topicKey: changeType,
+        topicTitle: changeType,
+      });
       return;
     }
 
-    const genericChangeMsg = `<b>Instagram Event</b>\nTuri: <code>${this.commonService.escapeHtml(changeType)}</code>\n\n<pre>${this.commonService.escapeHtml(JSON.stringify(change, null, 2))}</pre>`;
-    await this.telegramService.sendToTelegramGroup(genericChangeMsg, changeType, changeType);
+    const genericChangeMessage =
+      '<b>Instagram Event</b>\n' +
+      `Turi: <code>${this.escapeHtml(changeType)}</code>\n\n` +
+      `<pre>${this.escapeHtml(this.shortJson(change))}</pre>`;
+
+    await this.telegramService.sendHtmlMessage(genericChangeMessage, {
+      topicKey: changeType,
+      topicTitle: changeType,
+    });
   }
 
-  async sendDirectMessage(username: string, message: string): Promise<any> {
-    const url = `https://graph.facebook.com/v16.0/me/messages`;
-    const accessToken = this.accessToken;
+  private async processMediaChange(mediaId: string): Promise<void> {
+    const mediaInfo = await this.getInstagramMediaInfo(mediaId);
+    const mediaType = String(mediaInfo?.media_type ?? '').toUpperCase();
+    const username = mediaInfo?.username ?? '';
+    const caption = mediaInfo?.caption ?? '';
+    const permalink = mediaInfo?.permalink ?? '';
+    const mediaUrl = mediaInfo?.media_url ?? mediaInfo?.thumbnail_url ?? '';
 
-    if (!accessToken) {
-      throw new Error('Instagram access token is not configured');
+    const isStory = mediaType === 'STORY';
+    const topicRouting: TopicRoutingOptions = {
+      topicKey: isStory ? 'story' : 'posts',
+      topicTitle: isStory ? 'Stories' : 'Posts',
+    };
+    const title = isStory
+      ? 'Yangi Story (Instagram)'
+      : 'Yangi Post (Instagram)';
+
+    const userLink = username
+      ? `<a href="https://instagram.com/${encodeURIComponent(username)}">${this.escapeHtml(username)}</a>`
+      : 'Instagram sahifa';
+
+    let text = `<b>${title}</b>\nKimdan: ${userLink}`;
+    if (caption) {
+      text += `\n\n${this.escapeHtml(caption)}`;
+    }
+    if (permalink) {
+      text += `\n\n${permalink}`;
+    }
+
+    await this.telegramService.sendHtmlMessage(text, topicRouting);
+
+    if (!mediaUrl) return;
+
+    try {
+      const { buffer, contentType } = await this.downloadBuffer(mediaUrl);
+      const extension = this.getExtensionFromContentType(contentType, 'jpg');
+      const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS';
+
+      await this.telegramService.sendBufferFile(
+        isVideo ? 'sendVideo' : 'sendPhoto',
+        isVideo ? 'video' : 'photo',
+        buffer,
+        `media.${extension}`,
+        contentType,
+        {
+          parseMode: 'HTML',
+          supportsStreaming: true,
+        },
+        topicRouting,
+      );
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Failed to forward media file: ${err.message}`);
+    }
+  }
+
+  private async processMessagingEvent(msg: WebhookMessaging): Promise<void> {
+    const eventType = this.getMessagingEventType(msg);
+    if (
+      ['dm.read', 'dm.delivery', 'dm.message_echo', 'dm.other'].includes(
+        eventType,
+      )
+    ) {
+      return;
+    }
+
+    const eventKey = this.getMessagingEventKey(msg);
+    if (this.isDuplicateKey(eventKey)) return;
+    this.cleanupProcessedMessages();
+
+    const senderId = msg.sender?.id;
+    const myIgId = this.configService.get<string>('instagram.igUserId', '');
+    if (!senderId || (myIgId && senderId === myIgId)) return;
+
+    if (eventType === 'dm.message') {
+      await this.processDmMessage(msg, senderId, eventType);
+      return;
+    }
+
+    if (eventType === 'dm.reaction') {
+      await this.processDmReaction(msg, senderId, eventType);
+      return;
+    }
+
+    const genericMessage =
+      '<b>Instagram DM Event</b>\n' +
+      `Turi: <code>${this.escapeHtml(eventType)}</code>\n` +
+      `Kimdan: <code>${this.escapeHtml(senderId)}</code>\n` +
+      `Kimga: <code>${this.escapeHtml(msg.recipient?.id ?? '')}</code>\n\n` +
+      `<pre>${this.escapeHtml(this.shortJson(msg))}</pre>`;
+
+    await this.telegramService.sendHtmlMessage(genericMessage, {
+      topicKey: eventType,
+      topicTitle: eventType,
+    });
+  }
+
+  private async processDmMessage(
+    msg: WebhookMessaging,
+    senderId: string,
+    eventType: string,
+  ): Promise<void> {
+    const text = this.extractMessageText(msg.message?.text);
+    const attachments = Array.isArray(msg.message?.attachments)
+      ? msg.message.attachments
+      : [];
+    const hasText = text.length > 0;
+    const hasAttachments = attachments.length > 0;
+
+    if (!hasText && !hasAttachments) return;
+
+    const userInfo = await this.getInstagramUserInfo(senderId);
+    const name = userInfo?.name ?? "Noma'lum";
+    const username = userInfo?.username ?? '';
+    const userLink = this.createInstagramProfileLink(username, senderId, {
+      displayName: name,
+      fallbackPrefix: 'ID',
+    });
+
+    const topicRouting: TopicRoutingOptions = {
+      topicKey: eventType,
+      topicTitle: eventType,
+    };
+
+    if (hasText) {
+      const textMessage =
+        '<b>Yangi xabar (Instagram DM)</b>\n' +
+        `Kimdan: ${userLink}\n\n` +
+        `Xabar: ${this.escapeHtml(text)}`;
+
+      await this.telegramService.sendHtmlMessage(textMessage, topicRouting);
+    }
+
+    if (hasAttachments) {
+      for (const attachment of attachments) {
+        await this.sendDmAttachmentToTelegram(attachment, {
+          userLink,
+          topicRouting,
+        });
+      }
+    }
+
+    const autoReplyText = this.configService.get<string>(
+      'instagram.autoReplyText',
+      'Salom! Sizga tez orada javob beramiz.',
+    );
+    await this.autoReplyToInstagramDm(senderId, autoReplyText);
+  }
+
+  private async processDmReaction(
+    msg: WebhookMessaging,
+    senderId: string,
+    eventType: string,
+  ): Promise<void> {
+    const userInfo = await this.getInstagramUserInfo(senderId);
+    const username = userInfo?.username ?? senderId;
+    const emoji = msg.reaction?.reaction ?? '';
+
+    const message =
+      '<b>Instagram DM Reaction</b>\n' +
+      `Kimdan: <code>${this.escapeHtml(username)}</code>\n` +
+      `Reaksiya: ${this.escapeHtml(emoji)}`;
+
+    await this.telegramService.sendHtmlMessage(message, {
+      topicKey: eventType,
+      topicTitle: eventType,
+    });
+  }
+
+  private async sendDmAttachmentToTelegram(
+    attachment: WebhookAttachment,
+    context: DmAttachmentContext,
+  ): Promise<void> {
+    const type = String(attachment.type ?? 'file').toLowerCase();
+    const url = this.getAttachmentUrl(attachment);
+    const caption =
+      '<b>Instagram DM</b>\n' +
+      `Kimdan: ${context.userLink}\n` +
+      `Turi: <code>${this.escapeHtml(type)}</code>`;
+
+    if (type === 'share') {
+      const shareUrl =
+        attachment.payload?.url ??
+        attachment.payload?.link ??
+        attachment.payload?.permalink_url ??
+        '';
+      const title = attachment.payload?.title ?? '';
+
+      const message =
+        `${caption}${title ? `\nSarlavha: ${this.escapeHtml(title)}` : ''}` +
+        (shareUrl ? `\n\n${this.escapeHtml(shareUrl)}` : '\n\nURL topilmadi');
+
+      await this.telegramService.sendHtmlMessage(message, context.topicRouting);
+      return;
+    }
+
+    if (!url) {
+      const fallbackMessage =
+        `${caption}\n\n` +
+        '<b>URL topilmadi</b>\n' +
+        `<pre>${this.escapeHtml(this.shortJson(attachment))}</pre>`;
+      await this.telegramService.sendHtmlMessage(
+        fallbackMessage,
+        context.topicRouting,
+      );
+      return;
     }
 
     try {
-      const response = await this.httpService
-        .post(
-          url,
-          {
-            recipient: { username },
-            message: { text: message },
-          },
-          {
-            headers: {
-              Authorization: `Bearer ${accessToken}`,
-            },
-          },
-        )
-        .toPromise();
+      const { buffer, contentType } = await this.downloadBuffer(url);
+      const extension = this.getExtensionFromContentType(contentType, 'bin');
+      const filename = `file.${extension}`;
+      const shortCaption = this.truncateText(caption, 950);
 
-      if (!response) {
-        throw new Error('No response received from Instagram API');
+      const methodAndField = this.resolveTelegramMethodByAttachmentType(type);
+      let result = await this.telegramService.sendBufferFile(
+        methodAndField.method,
+        methodAndField.field,
+        buffer,
+        filename,
+        contentType,
+        {
+          caption: shortCaption,
+          parseMode: 'HTML',
+          supportsStreaming: true,
+        },
+        context.topicRouting,
+      );
+
+      if (!result.ok && methodAndField.method !== 'sendDocument') {
+        result = await this.telegramService.sendBufferFile(
+          'sendDocument',
+          'document',
+          buffer,
+          filename,
+          contentType,
+          {
+            caption: shortCaption,
+            parseMode: 'HTML',
+            supportsStreaming: true,
+          },
+          context.topicRouting,
+        );
       }
 
-      return response.data;
-    } catch (error: unknown) {
-      this.logger.error(
-        'Failed to send Instagram message',
-        (error as Error)?.stack,
-      );
-      throw new Error(
-        (error as Error)?.message || 'Failed to send Instagram message',
+      if (result.ok) return;
+
+      throw new Error(result.description ?? 'Attachment send failed');
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Attachment forward failed: ${err.message}`);
+
+      const fallbackMessage =
+        `${caption}\n\n` +
+        "Yuborib bo'lmadi.\n" +
+        `URL: ${this.escapeHtml(url)}`;
+      await this.telegramService.sendHtmlMessage(
+        fallbackMessage,
+        context.topicRouting,
       );
     }
   }
 
-  async getInstagramMediaInfo(mediaId: string): Promise<any> {
-    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+  private resolveTelegramMethodByAttachmentType(type: string): {
+    method: 'sendPhoto' | 'sendVideo' | 'sendVoice' | 'sendDocument';
+    field: 'photo' | 'video' | 'voice' | 'document';
+  } {
+    if (type === 'image' || type === 'sticker') {
+      return { method: 'sendPhoto', field: 'photo' };
+    }
+
+    if (type === 'video' || type === 'reel') {
+      return { method: 'sendVideo', field: 'video' };
+    }
+
+    if (type === 'audio' || type === 'voice_clip') {
+      return { method: 'sendVoice', field: 'voice' };
+    }
+
+    return { method: 'sendDocument', field: 'document' };
+  }
+
+  private async getInstagramUserInfo(
+    userId: string,
+  ): Promise<InstagramUserInfo | null> {
+    const accessToken = this.configService.get<string>(
+      'instagram.accessToken',
+      '',
+    );
+    const url =
+      `https://graph.instagram.com/v21.0/${encodeURIComponent(userId)}` +
+      `?fields=name,username&access_token=${encodeURIComponent(accessToken)}`;
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      return (await response.json()) as InstagramUserInfo;
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Failed to fetch Instagram user info: ${err.message}`);
+      return null;
+    }
+  }
+
+  private async getInstagramMediaInfo(
+    mediaId: string,
+  ): Promise<InstagramMediaInfo | null> {
+    const accessToken = this.configService.get<string>(
+      'instagram.accessToken',
+      '',
+    );
     if (!accessToken) {
-      this.logger.warn('INSTAGRAM_ACCESS_TOKEN is missing!');
+      this.logger.warn('INSTAGRAM_ACCESS_TOKEN is empty (media info)');
       return null;
     }
 
     const fields =
       'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,username';
+    const encodedMediaId = encodeURIComponent(mediaId);
+    const encodedToken = encodeURIComponent(accessToken);
+
     const urls = [
-      `https://graph.facebook.com/v21.0/${mediaId}?fields=${fields}&access_token=${accessToken}`,
-      `https://graph.instagram.com/v21.0/${mediaId}?fields=${fields}&access_token=${accessToken}`,
+      `https://graph.facebook.com/v21.0/${encodedMediaId}?fields=${fields}&access_token=${encodedToken}`,
+      `https://graph.instagram.com/v21.0/${encodedMediaId}?fields=${fields}&access_token=${encodedToken}`,
     ];
 
     for (const url of urls) {
       try {
         const response = await fetch(url);
         if (!response.ok) continue;
-        return await response.json();
-      } catch (err) {
-        this.logger.error('Error fetching media info:', err);
+        return (await response.json()) as InstagramMediaInfo;
+      } catch (error) {
+        const err = error as Error;
+        this.logger.error(`Failed to fetch media info: ${err.message}`);
       }
     }
 
     return null;
+  }
+
+  private async downloadBuffer(url: string): Promise<DownloadResult> {
+    const accessToken = this.configService.get<string>(
+      'instagram.accessToken',
+      '',
+    );
+    const headers = accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined;
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      throw new Error(`Download failed with status ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType:
+        response.headers.get('content-type') ?? 'application/octet-stream',
+    };
+  }
+
+  private async autoReplyToInstagramDm(
+    senderId: string,
+    replyText: string,
+  ): Promise<void> {
+    const accessToken = this.configService.get<string>(
+      'instagram.accessToken',
+      '',
+    );
+    if (!accessToken) {
+      this.logger.warn('INSTAGRAM_ACCESS_TOKEN is empty; skipping auto-reply');
+      return;
+    }
+
+    try {
+      await lastValueFrom(
+        this.httpService.post(
+          this.graphDmUrl,
+          {
+            recipient: { id: senderId },
+            message: { text: replyText },
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
+    } catch (error) {
+      const err = error as Error & { response?: { data?: unknown } };
+      const responseData = err.response?.data
+        ? JSON.stringify(err.response.data)
+        : undefined;
+      this.logger.error(
+        `Instagram DM auto-reply failed: ${err.message}`,
+        responseData ?? err.stack,
+      );
+    }
+  }
+
+  private getAttachmentUrl(attachment: WebhookAttachment): string {
+    return (
+      attachment.payload?.url ??
+      attachment.payload?.link ??
+      attachment.payload?.src ??
+      attachment.payload?.attachment_url ??
+      ''
+    );
+  }
+
+  private getMessagingEventType(msg: WebhookMessaging): string {
+    if (msg.message?.is_echo) return 'dm.message_echo';
+    if (msg.message) return 'dm.message';
+    if (msg.read) return 'dm.read';
+    if (msg.reaction) return 'dm.reaction';
+    if (msg.delivery) return 'dm.delivery';
+    if (msg.postback) return 'dm.postback';
+    if (msg.optin) return 'dm.optin';
+    if (msg.referral) return 'dm.referral';
+    return 'dm.other';
+  }
+
+  private getMessagingEventKey(msg: WebhookMessaging): string {
+    const type = this.getMessagingEventType(msg);
+
+    if (msg.message?.mid) return `dm:mid:${msg.message.mid}`;
+    if (msg.reaction?.mid) {
+      return `dm:reaction:${msg.reaction.mid}:${msg.reaction.action ?? ''}`;
+    }
+    if (msg.read?.watermark) {
+      return `dm:read:${msg.sender?.id ?? ''}:${msg.read.watermark}`;
+    }
+    if (msg.delivery?.watermark) {
+      return `dm:delivery:${msg.sender?.id ?? ''}:${msg.delivery.watermark}`;
+    }
+
+    return `dm:${type}:${this.hashObject(msg)}`;
+  }
+
+  private getChangeEventType(change: WebhookChange): string {
+    return `change.${change.field ?? 'unknown'}`;
+  }
+
+  private getChangeEventKey(change: WebhookChange): string {
+    const field = change.field ?? 'unknown';
+    const value = change.value;
+
+    const stableId =
+      value?.media_id ??
+      value?.comment_id ??
+      value?.id ??
+      value?.target_id ??
+      value?.event_id;
+
+    if (stableId) {
+      return `change:${field}:${String(stableId)}`;
+    }
+
+    return `change:${field}:${this.hashObject(change)}`;
+  }
+
+  private cleanupProcessedMessages(): void {
+    const now = Date.now();
+    for (const [key, timestamp] of this.processedMessages.entries()) {
+      if (now - timestamp > this.processedTtlMs) {
+        this.processedMessages.delete(key);
+      }
+    }
+
+    if (this.processedMessages.size > this.processedMaxSize) {
+      const keys = this.processedMessages.keys();
+      while (
+        this.processedMessages.size > Math.floor(this.processedMaxSize * 0.8)
+      ) {
+        const next = keys.next();
+        if (next.done) break;
+        this.processedMessages.delete(next.value);
+      }
+    }
+  }
+
+  private isDuplicateKey(key: string): boolean {
+    if (this.processedMessages.has(key)) return true;
+    this.processedMessages.set(key, Date.now());
+    return false;
+  }
+
+  private hashObject(value: unknown): string {
+    return crypto
+      .createHash('sha256')
+      .update(JSON.stringify(value))
+      .digest('hex')
+      .slice(0, 24);
+  }
+
+  private shortJson(value: unknown, max = 2500): string {
+    const text = JSON.stringify(value, null, 2);
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}...`;
+  }
+
+  private truncateText(text: string, max = 900): string {
+    if (text.length <= max) return text;
+    return `${text.slice(0, max)}...`;
+  }
+
+  private normalizeText(text?: string): string {
+    if (typeof text !== 'string') return 'Media/Boshqa narsa';
+    const normalized = text.trim();
+    return normalized.length > 0 ? normalized : 'Media/Boshqa narsa';
+  }
+
+  private extractMessageText(text?: string): string {
+    if (typeof text !== 'string') return '';
+    return text.trim();
+  }
+
+  private getExtensionFromContentType(
+    contentType: string,
+    fallback: string,
+  ): string {
+    const extension = contentType.split('/')[1]?.split(';')[0];
+    return extension && extension.length > 0 ? extension : fallback;
+  }
+
+  private createInstagramProfileLink(
+    username?: string,
+    userId?: string,
+    options?: { displayName?: string; fallbackPrefix?: string },
+  ): string {
+    if (username) {
+      const escapedUsername = this.escapeHtml(username);
+      const label = options?.displayName
+        ? `${this.escapeHtml(options.displayName)} (@${escapedUsername})`
+        : escapedUsername;
+      return `<a href="https://instagram.com/${encodeURIComponent(username)}">${label}</a>`;
+    }
+
+    const prefix = options?.fallbackPrefix ?? 'ID';
+    const fallbackLabel = userId
+      ? `${prefix}: ${this.escapeHtml(userId)}`
+      : `${prefix}: noma'lum`;
+    return `<a href="https://instagram.com/">${fallbackLabel}</a>`;
+  }
+
+  private escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }

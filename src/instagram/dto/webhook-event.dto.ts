@@ -1,30 +1,11 @@
-import { IsArray, IsObject, IsString, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
-
-class WebhookChange {
-  @IsString()
-  field!: string;
-
-  @IsObject()
-  value!: Record<string, unknown>;
-}
-
-class WebhookEntry {
-  @IsString()
-  id!: string;
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => WebhookChange)
-  changes!: WebhookChange[];
-}
+import { IsArray, IsOptional, IsString } from 'class-validator';
 
 export class WebhookEventDto {
+  @IsOptional()
   @IsString()
-  object!: string;
+  object?: string;
 
+  @IsOptional()
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => WebhookEntry)
-  entry!: WebhookEntry[];
+  entry?: any[];
 }

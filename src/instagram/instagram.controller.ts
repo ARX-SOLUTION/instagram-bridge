@@ -7,12 +7,15 @@ import {
   Logger,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { WebhookEventDto } from './dto/webhook-event.dto';
 import { WebhookVerifyDto } from './dto/webhook-verify.dto';
+import { MetaSignatureGuard } from './guards/meta-signature.guard';
 import { InstagramService } from './instagram.service';
 
 @Controller('instagram/webhook')
+@UseGuards(MetaSignatureGuard)
 export class InstagramController {
   private readonly logger = new Logger(InstagramController.name);
 
@@ -28,54 +31,21 @@ export class InstagramController {
       mode === 'subscribe' &&
       this.instagramService.validateVerifyToken(token)
     ) {
-      this.logger.log('Webhook verified successfully');
+      this.logger.log('Webhook verified');
       return challenge;
-    } else {
-      this.logger.error('Webhook verification failed');
-      throw new BadRequestException('Invalid verify token');
     }
+
+    throw new BadRequestException('Invalid verify token');
   }
 
   @Post()
   @HttpCode(200)
-  async handleWebhook(@Body() event: WebhookEventDto): Promise<string> {
-    try {
-      await this.instagramService.processWebhookEvent(event);
-      return 'EVENT_RECEIVED';
-    } catch (error) {
+  handleWebhook(@Body() event: WebhookEventDto): string {
+    void this.instagramService.processWebhookEvent(event).catch((error) => {
       const err = error as Error;
       this.logger.error('Error processing webhook', err.stack);
-      throw error;
-    }
-  }
+    });
 
-  @Post('send-instagram-message')
-  async sendMessageToInstagram(
-    @Body() body: { username: string; message: string },
-  ): Promise<string> {
-    const { username, message } = body;
-
-    if (!username || !message) {
-      throw new BadRequestException('username and message are required');
-    }
-
-    try {
-      const response = (await this.instagramService.sendDirectMessage(
-        username,
-        message,
-      )) as { status: number };
-
-      if (response.status === 200) {
-        return 'Message sent successfully';
-      } else {
-        throw new Error('Failed to send message');
-      }
-    } catch (error: unknown) {
-      this.logger.error(
-        'Error sending message to Instagram',
-        (error as Error)?.stack,
-      );
-      throw new BadRequestException('Failed to send message');
-    }
+    return 'EVENT_RECEIVED';
   }
 }

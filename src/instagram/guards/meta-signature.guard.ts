@@ -2,14 +2,20 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   RawBodyRequest,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Request } from 'express';
 
 @Injectable()
 export class MetaSignatureGuard implements CanActivate {
+  private readonly logger = new Logger(MetaSignatureGuard.name);
+
+  constructor(private readonly configService: ConfigService) {}
+
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest<RawBodyRequest<Request>>();
 
@@ -17,13 +23,14 @@ export class MetaSignatureGuard implements CanActivate {
 
     if (req.method === 'GET') return true;
 
-    if (!signature) {
-      throw new UnauthorizedException('Missing X-Hub-Signature-256');
+    const appSecret = this.configService.get<string>('instagram.appSecret', '');
+    if (!appSecret) {
+      this.logger.warn('META_APP_SECRET is empty; signature check skipped');
+      return true;
     }
 
-    const appSecret = process.env.META_APP_SECRET;
-    if (!appSecret) {
-      throw new UnauthorizedException('META_APP_SECRET not configured');
+    if (!signature) {
+      throw new UnauthorizedException('Missing X-Hub-Signature-256');
     }
 
     const rawBody = req.rawBody;

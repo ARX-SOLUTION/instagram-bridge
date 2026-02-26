@@ -40,14 +40,12 @@ export class InstagramController {
 
   @Post()
   @HttpCode(200)
-  async handleWebhook(@Body() event: WebhookEventDto): Promise<string> {
-    try {
-      await this.instagramService.processWebhookEvent(event);
-      return 'EVENT_RECEIVED';
-    } catch (error) {
+  handleWebhook(@Body() event: WebhookEventDto): string {
+    void this.instagramService.processWebhookEvent(event).catch((error) => {
       const err = error as Error;
       this.logger.error('Error processing webhook', err.stack);
-      throw error;
-    }
+    });
+
+    return 'EVENT_RECEIVED';
   }
 }

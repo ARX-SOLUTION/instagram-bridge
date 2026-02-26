@@ -1,0 +1,1 @@
+-- SQL migration script for initial schema setup

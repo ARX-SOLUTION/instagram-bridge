@@ -5,9 +5,11 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { InjectRepository } from '@nestjs/typeorm';
 import { lastValueFrom } from 'rxjs';
 import { Repository } from 'typeorm';
-import { WebhookEventDto } from './dto/webhook-event.dto';
-import { InstagramPost } from './entities/instagram-post.entity';
-import { MediaReceivedEvent } from './events/media-received.event';
+import { CommonService } from '../common/common.service.js';
+import { TelegramService } from '../telegram/telegram.service.js';
+import { WebhookEventDto } from './dto/webhook-event.dto.js';
+import { InstagramPost } from './entities/instagram-post.entity.js';
+import { MediaReceivedEvent } from './events/media-received.event.js';
 
 interface InstagramMedia {
   id: string;
@@ -30,6 +32,8 @@ export class InstagramService {
     private readonly eventEmitter: EventEmitter2,
     @InjectRepository(InstagramPost)
     private readonly postRepository: Repository<InstagramPost>,
+    private readonly telegramService: TelegramService,
+    private readonly commonService: CommonService,
   ) {
     this.accessToken = this.configService.get<string>(
       'INSTAGRAM_ACCESS_TOKEN',
@@ -304,6 +308,79 @@ export class InstagramService {
     }
   }
 
+  private async processChange(change: any): Promise<void> {
+    const changeType = this.commonService.getChangeEventType(change);
+    const changeKey = this.commonService.getChangeEventKey(change);
+    if (this.commonService.isDuplicateKey(changeKey)) return;
+    this.commonService.cleanupProcessedMessages();
+
+    const value = change.value;
+
+    if (change?.field === 'media' && value?.media_id) {
+      const mediaId = String(value.media_id);
+      const mediaInfo = await this.getInstagramMediaInfo(mediaId);
+      const mediaType = String(mediaInfo?.media_type || '').toUpperCase();
+      const username = mediaInfo?.username || '';
+      const caption = mediaInfo?.caption || '';
+      const permalink = mediaInfo?.permalink || '';
+      const mediaUrl = mediaInfo?.media_url || mediaInfo?.thumbnail_url || '';
+
+      const isStory = mediaType === 'STORY';
+      const topicKey = isStory ? 'story' : 'posts';
+      const topicTitle = isStory ? '📖 Stories' : '📸 Posts';
+      const title = isStory ? 'Yangi Story (Instagram)' : 'Yangi Post (Instagram)';
+
+      const userLink = username
+        ? `<a href="https://instagram.com/${encodeURIComponent(username)}">${this.commonService.escapeHtml(username)}</a>`
+        : 'Instagram sahifa';
+
+      let tgMsg = `<b>${title}</b>\nKimdan: ${userLink}`;
+      if (caption) tgMsg += `\n\n${this.commonService.escapeHtml(caption)}`;
+      if (permalink) tgMsg += `\n\n${permalink}`;
+
+      await this.telegramService.sendToTelegramGroup(tgMsg, topicKey, topicTitle);
+
+      if (mediaUrl) {
+        try {
+          const { buffer, contentType } = await this.commonService.downloadBuffer(mediaUrl);
+          const ext = contentType.split('/')[1]?.split(';')[0] || 'jpg';
+          const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS';
+          const method = isVideo ? 'sendVideo' : 'sendPhoto';
+          const fieldName = isVideo ? 'video' : 'photo';
+          await this.telegramService.sendFileToTelegram(
+            method,
+            fieldName,
+            buffer,
+            `media.${ext}`,
+            contentType,
+            { parse_mode: 'HTML', supports_streaming: true },
+            topicKey,
+            topicTitle,
+          );
+        } catch (err) {
+          this.logger.error('Media rasm yuborishda xatolik:', err);
+        }
+      }
+      return;
+    }
+
+    if (value && value.from) {
+      const username = value.from.username;
+      const text = value.text || 'Media/Boshqa narsa';
+
+      const userLink = username
+        ? `<a href="https://instagram.com/${encodeURIComponent(username)}">${this.commonService.escapeHtml(username)}</a>`
+        : `<a href="https://instagram.com/">Foydalanuvchi ID: ${this.commonService.escapeHtml(value.from.id || '')}</a>`;
+
+      const tgMsg = `<b>Yangi bildirishnoma (Instagram)</b>\nKimdan: ${userLink}\n\nXabar: ${this.commonService.escapeHtml(text)}`;
+      await this.telegramService.sendToTelegramGroup(tgMsg, changeType, changeType);
+      return;
+    }
+
+    const genericChangeMsg = `<b>Instagram Event</b>\nTuri: <code>${this.commonService.escapeHtml(changeType)}</code>\n\n<pre>${this.commonService.escapeHtml(JSON.stringify(change, null, 2))}</pre>`;
+    await this.telegramService.sendToTelegramGroup(genericChangeMsg, changeType, changeType);
+  }
+
   async sendDirectMessage(username: string, message: string): Promise<any> {
     const url = `https://graph.facebook.com/v16.0/me/messages`;
     const accessToken = this.accessToken;
@@ -342,5 +419,32 @@ export class InstagramService {
         (error as Error)?.message || 'Failed to send Instagram message',
       );
     }
+  }
+
+  async getInstagramMediaInfo(mediaId: string): Promise<any> {
+    const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
+    if (!accessToken) {
+      this.logger.warn('INSTAGRAM_ACCESS_TOKEN is missing!');
+      return null;
+    }
+
+    const fields =
+      'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,username';
+    const urls = [
+      `https://graph.facebook.com/v21.0/${mediaId}?fields=${fields}&access_token=${accessToken}`,
+      `https://graph.instagram.com/v21.0/${mediaId}?fields=${fields}&access_token=${accessToken}`,
+    ];
+
+    for (const url of urls) {
+      try {
+        const response = await fetch(url);
+        if (!response.ok) continue;
+        return await response.json();
+      } catch (err) {
+        this.logger.error('Error fetching media info:', err);
+      }
+    }
+
+    return null;
   }
 }

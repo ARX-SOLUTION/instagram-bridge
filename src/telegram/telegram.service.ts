@@ -2,7 +2,7 @@ import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { lastValueFrom } from 'rxjs';
-import { retry } from '../common/utils/retry.util';
+import { retry } from '../common/utils/retry.util.js';
 
 @Injectable()
 export class TelegramService {
@@ -50,6 +50,52 @@ export class TelegramService {
       1000,
       this.logger,
     );
+  }
+
+  async sendToTelegramGroup(
+    messageHtml: string,
+    topicKey = '',
+    topicTitle = '',
+  ): Promise<void> {
+    await this.send('sendMessage', {
+      chat_id: this.chatId,
+      text: messageHtml,
+      parse_mode: 'HTML',
+      disable_web_page_preview: true,
+    });
+  }
+
+  async sendFileToTelegram(
+    method: string,
+    fieldName: string,
+    buffer: Buffer,
+    filename: string,
+    contentType: string,
+    extraPayload: Record<string, any>,
+    topicKey: string,
+    topicTitle: string,
+  ): Promise<void> {
+    const formData = new FormData();
+    const arrayBuffer = buffer.buffer.slice(
+      buffer.byteOffset,
+      buffer.byteOffset + buffer.byteLength,
+    ) as ArrayBuffer;
+    formData.append('chat_id', this.chatId);
+    formData.append(fieldName, new Blob([arrayBuffer], { type: contentType }), filename);
+
+    for (const [key, value] of Object.entries(extraPayload)) {
+      formData.append(key, value);
+    }
+
+    const url = `${this.baseUrl}/${method}`;
+    try {
+      await lastValueFrom(this.httpService.post(url, formData));
+      this.logger.log(`Telegram ${method} successful`);
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Telegram ${method} failed: ${err.message}`, err.stack);
+      throw error;
+    }
   }
 
   private async send(method: string, data: any): Promise<void> {

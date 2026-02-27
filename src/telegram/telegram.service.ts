@@ -49,7 +49,10 @@ export class TelegramService {
     );
     this.chatId = this.configService.get<string>(
       'telegram.chatId',
-      this.configService.get<string>('CHAT_ID', ''),
+      this.configService.get<string>(
+        'TELEGRAM_CHAT_ID',
+        this.configService.get<string>('CHAT_ID', ''),
+      ),
     );
     this.enableForumTopics = this.configService.get<boolean>(
       'telegram.enableTopics',
@@ -89,19 +92,18 @@ export class TelegramService {
     );
   }
 
-  async sendMessageToChat(chatId: string, text: string): Promise<void> {
-    if (!this.ensureBotTokenConfigured()) return;
+  async sendMessageToChat(
+    chatId: string,
+    text: string,
+  ): Promise<TelegramApiResult> {
+    if (!this.ensureBotTokenConfigured()) {
+      return { ok: false, description: 'TELEGRAM_BOT_TOKEN is empty' };
+    }
 
-    const response = await this.executeJsonWithRetry('sendMessage', {
+    return this.executeJsonWithRetry('sendMessage', {
       chat_id: chatId,
       text,
     });
-
-    if (!response.ok) {
-      this.logger.error(
-        `Telegram sendMessage failed: ${response.description ?? 'Unknown error'}`,
-      );
-    }
   }
 
   async sendPhoto(
@@ -312,7 +314,9 @@ aaaaaaaaaaaa  async sendBufferFile(
     if (!this.ensureBotTokenConfigured()) return false;
 
     if (!this.chatId) {
-      this.logger.warn('CHAT_ID is empty; skipping Telegram send');
+      this.logger.warn(
+        'TELEGRAM_CHAT_ID/CHAT_ID is empty; skipping Telegram send',
+      );
       return false;
     }
 

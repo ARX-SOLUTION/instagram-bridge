@@ -1,15 +1,23 @@
+const nodeEnv = process.env.NODE_ENV ?? 'development';
+const defaultDbSync = nodeEnv !== 'production';
+
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
+  nodeEnv,
   database: {
     host: process.env.DATABASE_HOST,
     port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),
     username: process.env.DATABASE_USER,
     password: process.env.DATABASE_PASSWORD,
     name: process.env.DATABASE_NAME,
+    synchronize:
+      (
+        process.env.DATABASE_SYNCHRONIZE ?? String(defaultDbSync)
+      ).toLowerCase() === 'true',
   },
   telegram: {
     botToken: process.env.TELEGRAM_BOT_TOKEN,
-    chatId: process.env.CHAT_ID,
+    chatId: process.env.TELEGRAM_CHAT_ID ?? process.env.CHAT_ID,
     enableTopics:
       (process.env.TELEGRAM_ENABLE_TOPICS ?? 'true').toLowerCase() !== 'false',
     topicCachePath:

@@ -6,7 +6,7 @@ import { lastValueFrom } from 'rxjs';
 import {
   TelegramService,
   TopicRoutingOptions,
-} from '../telegram/telegram.service';
+} from '../telegram/telegram.service.js';
 
 interface InstagramUserInfo {
   id?: string;

@@ -1,17 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import type { Request } from 'express';
+
+type RequestWithRawBody = Request & { rawBody?: Buffer };
+type UnknownRecord = Record<string, unknown>;
 
 @Injectable()
 export class BridgeService {
   private readonly topicThreadCache = new Map<string, number>();
-  private readonly TOPIC_CACHE_PATH = process.env.TELEGRAM_TOPIC_CACHE_PATH || '.telegram-topic-cache.json';
+  private readonly TOPIC_CACHE_PATH =
+    process.env.TELEGRAM_TOPIC_CACHE_PATH || '.telegram-topic-cache.json';
 
   constructor() {
     this.readTopicCache();
   }
 
-  verifyMetaSignature(req: any): boolean {
+  verifyMetaSignature(req: RequestWithRawBody): boolean {
     const signature = req.header('X-Hub-Signature-256');
 
     if (req.method === 'GET') return true;
@@ -19,7 +24,7 @@ export class BridgeService {
     const META_APP_SECRET = process.env.META_APP_SECRET || '';
     if (!META_APP_SECRET || !signature) return false;
 
-    const raw = req.rawBody || Buffer.from('');
+    const raw = req.rawBody ?? Buffer.from('');
     const expected =
       'sha256=' +
       crypto.createHmac('sha256', META_APP_SECRET).update(raw).digest('hex');
@@ -30,7 +35,7 @@ export class BridgeService {
     return a.length === b.length && crypto.timingSafeEqual(a, b);
   }
 
-  async processInstagramEvent(event: any) {
+  processInstagramEvent(event: unknown): void {
     console.log('========== IG EVENT ==========');
     console.log(JSON.stringify(event, null, 2));
     // Add logic to process Instagram events here
@@ -40,8 +45,8 @@ export class BridgeService {
     try {
       if (!fs.existsSync(this.TOPIC_CACHE_PATH)) return;
       const raw = fs.readFileSync(this.TOPIC_CACHE_PATH, 'utf8');
-      const parsed = JSON.parse(raw);
-      for (const [key, value] of Object.entries(parsed || {})) {
+      const parsed = this.parseCache(raw);
+      for (const [key, value] of Object.entries(parsed)) {
         const threadId = Number(value);
         if (Number.isInteger(threadId) && threadId > 0) {
           this.topicThreadCache.set(key, threadId);
@@ -55,9 +60,22 @@ export class BridgeService {
   private writeTopicCache() {
     try {
       const data = Object.fromEntries(this.topicThreadCache.entries());
-      fs.writeFileSync(this.TOPIC_CACHE_PATH, JSON.stringify(data, null, 2), 'utf8');
+      fs.writeFileSync(
+        this.TOPIC_CACHE_PATH,
+        JSON.stringify(data, null, 2),
+        'utf8',
+      );
     } catch (err) {
       console.error('Topic cache yozishda xatolik:', err);
     }
+  }
+
+  private parseCache(raw: string): UnknownRecord {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+
+    return parsed as UnknownRecord;
   }
 }

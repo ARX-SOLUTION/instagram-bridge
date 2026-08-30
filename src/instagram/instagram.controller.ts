@@ -9,10 +9,10 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { WebhookEventDto } from './dto/webhook-event.dto';
-import { WebhookVerifyDto } from './dto/webhook-verify.dto';
-import { MetaSignatureGuard } from './guards/meta-signature.guard';
-import { InstagramService } from './instagram.service';
+import { WebhookEventDto } from './dto/webhook-event.dto.js';
+import { WebhookVerifyDto } from './dto/webhook-verify.dto.js';
+import { MetaSignatureGuard } from './guards/meta-signature.guard.js';
+import { InstagramService } from './instagram.service.js';
 
 @Controller('instagram/webhook')
 @UseGuards(MetaSignatureGuard)

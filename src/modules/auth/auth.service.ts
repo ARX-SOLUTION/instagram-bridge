@@ -13,7 +13,7 @@ export class AuthService {
   validateTelegramInitData(initData: Record<string, string>): boolean {
     const secretKey = crypto
       .createHash('sha256')
-      .update(this.configService.get<string>('TELEGRAM_BOT_TOKEN'))
+      .update(this.configService.get<string>('TELEGRAM_BOT_TOKEN') || '')
       .digest();
 
     const checkString = Object.keys(initData)

@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TelegrafModule } from 'nestjs-telegraf';
-import { BotService } from './bot.service';
+import { BotService } from './bot.service.js';
 
 @Module({
   imports: [
@@ -9,7 +9,7 @@ import { BotService } from './bot.service';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => ({
-        token: configService.get<string>('TELEGRAM_BOT_TOKEN'),
+        token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
       }),
     }),
   ],

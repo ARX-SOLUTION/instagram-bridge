@@ -28,8 +28,6 @@ import { TelegramModule } from './telegram/telegram.module.js';
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer
-      .apply(RawBodyMiddleware, LoggerMiddleware)
-      .forRoutes('*');
+    consumer.apply(RawBodyMiddleware, LoggerMiddleware).forRoutes('*');
   }
 }

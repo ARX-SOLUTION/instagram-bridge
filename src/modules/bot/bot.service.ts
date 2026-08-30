@@ -10,7 +10,9 @@ export class BotService {
 
   private initializeCommands() {
     this.bot.start((ctx) => ctx.reply('Welcome to MyServiceBot!'));
-    this.bot.help((ctx) => ctx.reply('Here are the available commands: /start, /help'));
+    this.bot.help((ctx) =>
+      ctx.reply('Here are the available commands: /start, /help'),
+    );
     this.bot.command('admin', (ctx) => ctx.reply('Admin command placeholder'));
   }
 }

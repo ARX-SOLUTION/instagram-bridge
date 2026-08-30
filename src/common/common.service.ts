@@ -1,6 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import crypto from 'crypto';
 
+interface ChangeValue {
+  media_id?: string | number;
+  comment_id?: string | number;
+  id?: string | number;
+  target_id?: string | number;
+  event_id?: string | number;
+  [key: string]: unknown;
+}
+
+interface ChangePayload {
+  field?: string;
+  value?: ChangeValue;
+  [key: string]: unknown;
+}
+
 @Injectable()
 export class CommonService {
   private readonly processedMessages = new Map<string, number>();
@@ -16,7 +31,7 @@ export class CommonService {
       .replace(/'/g, '&#39;');
   }
 
-  hashObject(value: any): string {
+  hashObject(value: unknown): string {
     return crypto
       .createHash('sha256')
       .update(JSON.stringify(value))
@@ -40,20 +55,22 @@ export class CommonService {
 
     if (this.processedMessages.size > this.PROCESSED_MAX_SIZE) {
       const keys = this.processedMessages.keys();
-      while (this.processedMessages.size > Math.floor(this.PROCESSED_MAX_SIZE * 0.8)) {
-        const oldestKey = keys.next().value;
+      while (
+        this.processedMessages.size > Math.floor(this.PROCESSED_MAX_SIZE * 0.8)
+      ) {
+        const oldestKey: string | undefined = keys.next().value;
         if (!oldestKey) break;
         this.processedMessages.delete(oldestKey);
       }
     }
   }
 
-  getChangeEventType(change: any): string {
+  getChangeEventType(change: ChangePayload): string {
     const field = change?.field || 'unknown';
     return `change.${field}`;
   }
 
-  getChangeEventKey(change: any): string {
+  getChangeEventKey(change: ChangePayload): string {
     const field = change?.field || 'unknown';
     const value = change?.value || {};
     const stableId =
@@ -67,7 +84,9 @@ export class CommonService {
     return `change:${field}:${this.hashObject(change)}`;
   }
 
-  async downloadBuffer(url: string): Promise<{ buffer: Buffer; contentType: string }> {
+  async downloadBuffer(
+    url: string,
+  ): Promise<{ buffer: Buffer; contentType: string }> {
     const accessToken = process.env.INSTAGRAM_ACCESS_TOKEN || '';
     const headers: Record<string, string> = accessToken
       ? { Authorization: `Bearer ${accessToken}` }
@@ -75,7 +94,8 @@ export class CommonService {
     const response = await fetch(url, { headers });
     if (!response.ok) throw new Error(`Download failed: ${response.status}`);
     const buffer = Buffer.from(await response.arrayBuffer());
-    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const contentType =
+      response.headers.get('content-type') || 'application/octet-stream';
     return { buffer, contentType };
   }
 }

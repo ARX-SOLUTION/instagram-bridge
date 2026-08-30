@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
-import { InstagramController } from './instagram.controller';
-import { InstagramService } from './instagram.service';
-import { TelegramModule } from '../telegram/telegram.module';
+import { InstagramController } from './instagram.controller.js';
+import { InstagramService } from './instagram.service.js';
+import { TelegramModule } from '../telegram/telegram.module.js';
 
 @Module({
   imports: [HttpModule, ConfigModule, TelegramModule],

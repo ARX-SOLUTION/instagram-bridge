@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { retry } from '../common/utils/retry.util';
+import { retry } from '../common/utils/retry.util.js';
 
 type TelegramMethod =
   | 'sendMessage'

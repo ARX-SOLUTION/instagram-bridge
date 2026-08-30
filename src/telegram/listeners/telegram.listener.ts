@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { TelegramService } from '../telegram.service';
-import { InstagramActivityEvent } from '../../instagram/events/instagram-activity.event';
-import { MediaReceivedEvent } from '../../instagram/events/media-received.event';
+import { TelegramService } from '../telegram.service.js';
+import { InstagramActivityEvent } from '../../instagram/events/instagram-activity.event.js';
+import { MediaReceivedEvent } from '../../instagram/events/media-received.event.js';
 
 @Injectable()
 export class TelegramListener {

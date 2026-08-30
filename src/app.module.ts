@@ -8,7 +8,7 @@ import { RawBodyMiddleware } from './common/middleware/raw-body.middleware.js';
 import configuration from './config/configuration.js';
 import { DatabaseModule } from './database/database.module.js';
 import { InstagramModule } from './instagram/instagram.module.js';
-import { ContentModule } from './modules/content/content.module';
+import { ContentModule } from './modules/content/content.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 
 @Module({

@@ -6,8 +6,8 @@ import {
   Post,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SendTelegramMessageDto } from './dto/send-telegram-message.dto';
-import { TelegramService } from './telegram.service';
+import { SendTelegramMessageDto } from './dto/send-telegram-message.dto.js';
+import { TelegramService } from './telegram.service.js';
 
 @Controller('instagram/webhook')
 export class TelegramController {

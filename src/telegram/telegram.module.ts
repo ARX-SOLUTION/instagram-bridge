@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
-import { TelegramService } from './telegram.service';
-import { TelegramListener } from './listeners/telegram.listener';
-import { TelegramController } from './telegram.controller';
+import { TelegramService } from './telegram.service.js';
+import { TelegramListener } from './listeners/telegram.listener.js';
+import { TelegramController } from './telegram.controller.js';
 
 @Module({
   imports: [HttpModule, ConfigModule],

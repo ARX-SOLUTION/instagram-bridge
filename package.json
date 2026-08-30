@@ -1,6 +1,10 @@
 {
   "name": "instagram-bridge",
   "version": "0.0.1",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=22"
+  },
   "description": "",
   "author": "",
   "private": true,

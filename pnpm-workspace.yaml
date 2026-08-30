@@ -1,4 +1,4 @@
 allowBuilds:
-  '@nestjs/core': set this to true or false
-  esbuild: set this to true or false
-  unrs-resolver: set this to true or false
+  '@nestjs/core@11.1.14': false
+  'esbuild@0.18.20 || 0.25.12': true
+  'unrs-resolver@1.11.1': true

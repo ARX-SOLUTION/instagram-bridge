@@ -1,5 +1,7 @@
 const nodeEnv = process.env.NODE_ENV ?? 'development';
 const defaultDbSync = nodeEnv !== 'production';
+const isEnabled = (value: string | undefined, defaultValue = false) =>
+  value === undefined ? defaultValue : value.toLowerCase() === 'true';
 
 export default () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
@@ -28,6 +30,12 @@ export default () => ({
     verifyToken: process.env.INSTAGRAM_VERIFY_TOKEN,
     appSecret: process.env.META_APP_SECRET,
     igUserId: process.env.INSTAGRAM_IG_USER_ID ?? '17841420906468205',
+    apiBaseUrl:
+      process.env.INSTAGRAM_API_BASE_URL ?? 'https://graph.instagram.com',
+    apiVersion: process.env.INSTAGRAM_API_VERSION ?? 'v25.0',
+    publishEnabled: isEnabled(process.env.INSTAGRAM_PUBLISH_ENABLED),
+    publishApiKey: process.env.INSTAGRAM_PUBLISH_API_KEY,
+    autoReplyEnabled: isEnabled(process.env.INSTAGRAM_AUTO_REPLY_ENABLED),
     autoReplyText:
       process.env.INSTAGRAM_AUTO_REPLY_TEXT ??
       'Salom! Sizga tez orada javob beramiz.',

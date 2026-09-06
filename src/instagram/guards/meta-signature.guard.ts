@@ -25,7 +25,15 @@ export class MetaSignatureGuard implements CanActivate {
 
     const appSecret = this.configService.get<string>('instagram.appSecret', '');
     if (!appSecret) {
-      this.logger.warn('META_APP_SECRET is empty; signature check skipped');
+      const nodeEnv = this.configService.get<string>('nodeEnv', 'development');
+      const message = 'META_APP_SECRET is empty; webhook cannot be verified';
+
+      if (nodeEnv === 'production') {
+        this.logger.error(message);
+        throw new UnauthorizedException(message);
+      }
+
+      this.logger.warn(`${message}; development-only bypass`);
       return true;
     }
 

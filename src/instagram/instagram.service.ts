@@ -125,7 +125,6 @@ interface DmAttachmentContext {
 @Injectable()
 export class InstagramService {
   private readonly logger = new Logger(InstagramService.name);
-  private readonly graphDmUrl = 'https://graph.instagram.com/v21.0/me/messages';
   private readonly processedMessages = new Map<string, number>();
 
   private readonly processedTtlMs = 10 * 60 * 1000;
@@ -390,11 +389,17 @@ export class InstagramService {
       }
     }
 
-    const autoReplyText = this.configService.get<string>(
-      'instagram.autoReplyText',
-      'Salom! Sizga tez orada javob beramiz.',
+    const autoReplyEnabled = this.configService.get<boolean>(
+      'instagram.autoReplyEnabled',
+      false,
     );
-    await this.autoReplyToInstagramDm(senderId, autoReplyText);
+    if (autoReplyEnabled) {
+      const autoReplyText = this.configService.get<string>(
+        'instagram.autoReplyText',
+        'Salom! Sizga tez orada javob beramiz.',
+      );
+      await this.autoReplyToInstagramDm(senderId, autoReplyText);
+    }
   }
 
   private async processDmReaction(
@@ -537,12 +542,12 @@ export class InstagramService {
       'instagram.accessToken',
       '',
     );
-    const url =
-      `https://graph.instagram.com/v21.0/${encodeURIComponent(userId)}` +
-      `?fields=name,username&access_token=${encodeURIComponent(accessToken)}`;
+    const url = `${this.getInstagramGraphUrl(encodeURIComponent(userId))}?fields=name,username`;
 
     try {
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
       if (!response.ok) return null;
       return (await response.json()) as InstagramUserInfo;
     } catch (error) {
@@ -567,22 +572,17 @@ export class InstagramService {
     const fields =
       'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,username';
     const encodedMediaId = encodeURIComponent(mediaId);
-    const encodedToken = encodeURIComponent(accessToken);
+    const url = `${this.getInstagramGraphUrl(encodedMediaId)}?fields=${fields}`;
 
-    const urls = [
-      `https://graph.facebook.com/v21.0/${encodedMediaId}?fields=${fields}&access_token=${encodedToken}`,
-      `https://graph.instagram.com/v21.0/${encodedMediaId}?fields=${fields}&access_token=${encodedToken}`,
-    ];
-
-    for (const url of urls) {
-      try {
-        const response = await fetch(url);
-        if (!response.ok) continue;
-        return (await response.json()) as InstagramMediaInfo;
-      } catch (error) {
-        const err = error as Error;
-        this.logger.error(`Failed to fetch media info: ${err.message}`);
-      }
+    try {
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      if (!response.ok) return null;
+      return (await response.json()) as InstagramMediaInfo;
+    } catch (error) {
+      const err = error as Error;
+      this.logger.error(`Failed to fetch media info: ${err.message}`);
     }
 
     return null;
@@ -626,7 +626,7 @@ export class InstagramService {
     try {
       await lastValueFrom(
         this.httpService.post(
-          this.graphDmUrl,
+          this.getInstagramGraphUrl('me/messages'),
           {
             recipient: { id: senderId },
             message: { text: replyText },
@@ -659,6 +659,19 @@ export class InstagramService {
       attachment.payload?.attachment_url ??
       ''
     );
+  }
+
+  private getInstagramGraphUrl(path: string): string {
+    const apiBaseUrl = this.configService.get<string>(
+      'instagram.apiBaseUrl',
+      'https://graph.instagram.com',
+    );
+    const apiVersion = this.configService.get<string>(
+      'instagram.apiVersion',
+      'v25.0',
+    );
+
+    return `${apiBaseUrl.replace(/\/$/, '')}/${apiVersion}/${path}`;
   }
 
   private getMessagingEventType(msg: WebhookMessaging): string {

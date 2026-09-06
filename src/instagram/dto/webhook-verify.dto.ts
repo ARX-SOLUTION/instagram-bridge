@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
 
 export class WebhookVerifyDto {
   @IsString()
@@ -12,4 +12,16 @@ export class WebhookVerifyDto {
   @IsString()
   @IsNotEmpty()
   'hub.verify_token': string;
+
+  @IsOptional()
+  @IsString()
+  hub_mode?: string;
+
+  @IsOptional()
+  @IsString()
+  hub_challenge?: string;
+
+  @IsOptional()
+  @IsString()
+  hub_verify_token?: string;
 }

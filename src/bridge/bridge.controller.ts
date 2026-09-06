@@ -20,7 +20,7 @@ export class BridgeController {
   }
 
   @Post()
-  async handleWebhook(@Req() req: Request, @Res() res: Response) {
+  handleWebhook(@Req() req: Request, @Res() res: Response) {
     const isValid = this.bridgeService.verifyMetaSignature(req);
     if (!isValid) {
       return res.status(HttpStatus.UNAUTHORIZED).send('Invalid signature');
@@ -29,7 +29,7 @@ export class BridgeController {
     res.status(HttpStatus.OK).send('EVENT_RECEIVED');
 
     try {
-      await this.bridgeService.processInstagramEvent(req.body);
+      this.bridgeService.processInstagramEvent(req.body);
     } catch (error) {
       console.error('Error processing webhook:', error);
     }

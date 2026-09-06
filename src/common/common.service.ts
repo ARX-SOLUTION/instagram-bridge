@@ -58,9 +58,9 @@ export class CommonService {
       while (
         this.processedMessages.size > Math.floor(this.PROCESSED_MAX_SIZE * 0.8)
       ) {
-        const oldestKey: string | undefined = keys.next().value;
-        if (!oldestKey) break;
-        this.processedMessages.delete(oldestKey);
+        const next = keys.next();
+        if (next.done) break;
+        this.processedMessages.delete(next.value);
       }
     }
   }

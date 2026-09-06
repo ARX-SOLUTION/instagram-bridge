@@ -13,14 +13,14 @@
   "scripts": {
     "build": "nest build",
     "format": "prettier --write \"src/**/*.ts\"",
-    "start": "pm2 start ecosystem.config.cjs",
-    "start:dev": "pm2 start ecosystem.config.cjs --watch",
-    "start:debug": "pm2 start ecosystem.config.cjs --node-args='--inspect'",
-    "start:prod": "pm2 start ecosystem.config.cjs --env production",
+    "start": "pnpm run build && pm2 startOrReload ecosystem.config.cjs --update-env",
+    "start:dev": "nest start --watch",
+    "start:debug": "nest start --debug --watch",
+    "start:prod": "pnpm run build && pm2 startOrReload ecosystem.config.cjs --update-env",
     "lint": "eslint \"{src,apps,libs}/**/*.ts\" --fix",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:cov": "jest --coverage",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:watch": "NODE_OPTIONS=--experimental-vm-modules jest --watch",
+    "test:cov": "NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "prepare": "husky",
@@ -35,38 +35,38 @@
   },
   "dependencies": {
     "@nestjs/axios": "^4.0.1",
-    "@nestjs/common": "^11.0.1",
+    "@nestjs/common": "^11.2.3",
     "@nestjs/config": "^4.0.3",
-    "@nestjs/core": "^11.0.1",
+    "@nestjs/core": "^11.2.3",
     "@nestjs/event-emitter": "^3.0.1",
     "@nestjs/jwt": "^12.0.1",
-    "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/serve-static": "^12.0.0",
+    "@nestjs/platform-express": "^11.2.3",
+    "@nestjs/serve-static": "^5.0.5",
     "@nestjs/typeorm": "^11.0.0",
-    "axios": "^1.13.5",
+    "axios": "^1.20.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.3",
     "dotenv": "^17.3.1",
-    "drizzle-kit": "^0.31.9",
-    "drizzle-orm": "^0.45.1",
     "express": "^5.2.1",
     "nestjs-telegraf": "^2.9.1",
     "pg": "^8.18.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "telegraf": "^4.16.3",
-    "typeorm": "^0.3.28"
+    "typeorm": "^0.3.31"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
     "@eslint/js": "^9.18.0",
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
-    "@nestjs/testing": "^11.0.1",
+    "@nestjs/testing": "^11.2.3",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.10.7",
     "@types/supertest": "^6.0.2",
+    "drizzle-kit": "^0.31.9",
+    "drizzle-orm": "^0.45.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
@@ -93,7 +93,18 @@
     "rootDir": "src",
     "testRegex": ".*\\.spec\\.ts$",
     "transform": {
-      "^.+\\.(t|j)s$": "ts-jest"
+      "^.+\\.(t|j)s$": [
+        "ts-jest",
+        {
+          "useESM": true
+        }
+      ]
+    },
+    "extensionsToTreatAsEsm": [
+      ".ts"
+    ],
+    "moduleNameMapper": {
+      "^(\\.{1,2}/.*)\\.js$": "$1"
     },
     "collectCoverageFrom": [
       "**/*.(t|j)s"

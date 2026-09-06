@@ -3,7 +3,7 @@ module.exports = {
     {
       name: 'instagram-bridge',
       cwd: __dirname,
-      script: 'dist/main.js',
+      script: 'dist/src/main.js',
       watch: false,
       autorestart: true,
       restart_delay: 3000,

@@ -10,6 +10,9 @@ import { InstagramModule } from './instagram/instagram.module.js';
 import { ContentModule } from './modules/content/content.module.js';
 import { TelegramModule } from './telegram/telegram.module.js';
 
+const databaseModules =
+  process.env.DATABASE_ENABLED === 'false' ? [] : [DatabaseModule];
+
 @Module({
   controllers: [AppController],
   imports: [
@@ -18,7 +21,7 @@ import { TelegramModule } from './telegram/telegram.module.js';
       load: [configuration],
     }),
     EventEmitterModule.forRoot(),
-    DatabaseModule,
+    ...databaseModules,
     InstagramModule,
     TelegramModule,
     CommonModule,
